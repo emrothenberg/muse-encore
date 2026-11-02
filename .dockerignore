@@ -1,0 +1,12 @@
+node_modules
+dist
+dist-viewer
+dist-editor
+_site
+packages/viewer/dist
+packages/viewer/fonts
+.git
+compare-out
+out
+*.log
+.DS_Store

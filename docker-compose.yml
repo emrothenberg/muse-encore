@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Self-host MuseEncore with Docker: `docker compose up -d --build`
+services:
+  muse-encore:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: muse-encore:local
+    container_name: muse-encore
+    ports:
+      - "8080:80"
+    restart: unless-stopped

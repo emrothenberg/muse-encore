@@ -61,11 +61,37 @@ Tested on desktop with:
 ## Getting started
 
 ```sh
-git clone --recurse-submodules <repository>
+git clone --recurse-submodules https://github.com/pstaender/muse-encore
+cd muse-encore
 npm install
 npm run dev:viewer        # viewer
 npm run dev:editor        # editor
 npm test                  # library tests
 ```
+
+## Self-hosting with Docker
+
+The viewer, the editor and the landing page are static apps. A complete Docker flow is provided so you can
+self-host them with a single command (no Node.js toolchain required on the host):
+
+```sh
+git clone --recurse-submodules https://github.com/pstaender/muse-encore
+cd muse-encore
+docker compose up -d --build
+```
+
+This builds the image (Node.js build stage + nginx runtime) and serves everything on port `8080`:
+
+* Landing page: http://localhost:8080/
+* Editor:       http://localhost:8080/editor/
+* Viewer:       http://localhost:8080/viewer/
+* Viewer package example: http://localhost:8080/viewer-package/example/
+
+To use a different host port, edit `docker-compose.yml` (or run `docker compose up -d --build` after changing
+the `"8080:80"` mapping). Stop with `docker compose down`.
+
+> The `MuseScore` git submodule must be present (it supplies the soundfont, templates and translations). The
+> commands above clone it automatically via `--recurse-submodules`; if you already cloned without it, run
+> `git submodule update --init` before building.
 
 See [CLAUDE.md](CLAUDE.md) for the project structure and commands and [test/README.md](test/README.md) for the tests.
