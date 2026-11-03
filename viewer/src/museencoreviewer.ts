@@ -350,8 +350,8 @@ export class MuseEncoreViewer implements IMuseEncoreViewer {
         this.host = document.createElement('div')
         this.host.className = 'muse-encore-viewer'
         this.host.style.cssText = 'display:block;width:100%;height:100%'
-        if (options.theme && options.theme !== 'auto') {
-            this.host.dataset.theme = options.theme
+        if (options.colorScheme === 'light' || options.colorScheme === 'dark') {
+            this.host.dataset.theme = options.colorScheme
         }
         this.shadow = this.host.attachShadow({ mode: 'open' })
         const style = document.createElement('style')

@@ -1791,3 +1791,4 @@
   or, without one, the first measure (firstMeasureBounds: the whole measure with its header, on all staves) instead of
   the page; new SVG icon carbon:center-to-fit (SVG_ICONS in ToolBars.tsx). The viewer keeps "Center page" (it has no selection).
   The new strings' translations are unreviewed machine translations.
+- Viewer package: option `colorScheme` ('auto' = the browser's, also for any other value; 'light', 'dark') replaces `theme`, which is removed (breaking for embeds using it). The examples with options use colorScheme: 'light'.

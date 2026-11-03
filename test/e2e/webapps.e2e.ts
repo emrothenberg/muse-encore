@@ -433,6 +433,21 @@ describe.skipIf(!CHROME || !hasSubmodule).each(['viewer', 'editor'])('%s', (app)
         await context.close()
     }, 120000)
 
+    it.runIf(app === 'viewer').each([
+        // browser, options, expected
+        ['light', { colorScheme: 'dark' }, 'dark'],
+        ['dark', { colorScheme: 'light' }, 'light'],
+        ['dark', { colorScheme: 'auto' }, 'dark'],
+        ['light', {}, 'light'],
+        ['dark', { colorScheme: 'blue' }, 'dark'],
+    ] as const)('color scheme: browser %s, options %j: %s', async (browserScheme, options, expected) => {
+        const { page, context } = await newPage({ colorScheme: browserScheme })
+        await page.goto(`${base}embed.html?url=${encodeURIComponent(SCORE_HOST + 'twosided.mscz')}&options=${encodeURIComponent(JSON.stringify(options))}`)
+        const scheme = await page.evaluate(() => getComputedStyle(document.querySelector('#score1 .muse-encore-viewer')!).colorScheme)
+        expect(scheme).toBe(expected)
+        await context.close()
+    }, 120000)
+
     it.each([
         ['goldberg.mscz', 119, '8.26x11.69'],
         ['landscape.mscz', 1, '11.69x5.51'],

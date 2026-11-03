@@ -50,8 +50,8 @@ export interface MuseEncoreViewerOptions {
     disableToolbar?: boolean
     /** the status bar below the score (loading, number of pages, errors); default false */
     showStatusBar?: boolean
-    /** the color scheme of the controls; default 'auto' (the system's) */
-    theme?: 'auto' | 'light' | 'dark'
+    /** the color scheme of the controls; default 'auto' (the browser's), as is any other value */
+    colorScheme?: 'auto' | 'light' | 'dark'
     /**
      * the URL of the directory with the fonts (Leland, Bravura, ... and the chord/style files of the package's
      * fonts/ directory); default: the package's fonts/ directory next to dist/
