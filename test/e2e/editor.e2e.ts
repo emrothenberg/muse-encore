@@ -2222,4 +2222,347 @@ describe.skipIf(!CHROME || !hasSubmodule)('editor', () => {
         expect(Object.keys(unzipSync(new Uint8Array(await read(mxl))))).toContain('META-INF/container.xml')
         await context.close()
     }, 180000)
+
+    // ---------------------------------------------------------------------------------
+    //   no work is lost: autosaves of other scores, the limit of stored scores, other tabs, the microphone
+    // ---------------------------------------------------------------------------------
+
+    /** runs on the raw IndexedDB of the app, given as a function source (it has no access to this module) */
+    const idb = <T>(page: Page, body: string): Promise<T> => page.evaluate(([src]) => new Promise<T>((resolve, reject) => {
+        const req = indexedDB.open('musescoreweb-scores')
+        req.onerror = () => reject(req.error)
+        req.onsuccess = () => {
+            const db = req.result
+            const fn = new Function('db', `return (${src})(db)`) as (db: IDBDatabase) => Promise<T>
+            void fn(db).then((r) => {
+                db.close()
+                resolve(r)
+            }, reject)
+        }
+    }), [body])
+    const autosaveKeys = (page: Page): Promise<string[]> => idb<string[]>(page, `db => new Promise((res) => {
+        const r = db.transaction('autosaves').objectStore('autosaves').getAllKeys(); r.onsuccess = () => res(r.result) })`)
+    const scoreCount = (page: Page): Promise<number> => idb<number>(page, `db => new Promise((res) => {
+        const r = db.transaction('scores').objectStore('scores').count(); r.onsuccess = () => res(r.result) })`)
+    /** stores scores directly; `autosave`: with an autosave */
+    const seedScores = (page: Page, names: readonly string[], autosave = false): Promise<void> => idb<void>(page, `db => new Promise((res, rej) => {
+        const t = db.transaction(['scores', 'contents', 'autosaves'], 'readwrite');
+        ${JSON.stringify(names)}.forEach((name, i) => {
+            t.objectStore('scores').put({ id: name, name: name + '.mscz', title: '', composer: '', source: 'file', size: 0, pages: 1, aspect: 0.7, created: 1, modified: 1, opened: 1000 + i })
+            t.objectStore('contents').put({ id: name, data: new ArrayBuffer(0) })
+            if (${autosave}) t.objectStore('autosaves').put({ id: name, data: new ArrayBuffer(0), time: Date.now() })
+        })
+        t.oncomplete = () => res(); t.onerror = () => rej(t.error)
+    })`)
+    const fastAutosave = (context: BrowserContext): Promise<void> => context.addInitScript(() => {
+        const s = JSON.parse(localStorage.getItem('musescoreweb:settings') ?? '{}') as { project?: Record<string, unknown> }
+        if (s.project?.autoSaveInterval === undefined) {
+            s.project = { ...s.project, autoSaveEnabled: true, autoSaveInterval: 0.02 }
+            localStorage.setItem('musescoreweb:settings', JSON.stringify(s))
+        }
+    })
+    const statusOf = (page: Page): Promise<string> => page.textContent('#status').then(t => t ?? '')
+    /** selects the first note and raises it */
+    const modify = async (page: Page): Promise<string> => {
+        await page.focus('#viewport')
+        await page.keyboard.press('ControlOrMeta+Home')
+        for (let i = 0; i < 8 && !(await statusOf(page)).startsWith('Note'); i++) {
+            await page.keyboard.press('ArrowRight')
+        }
+        const before = await statusOf(page)
+        await page.keyboard.press('ArrowUp')
+        await page.waitForFunction((b) => document.getElementById('status')!.textContent !== b, before)
+        return statusOf(page)
+    }
+    const waitAutosave = async (page: Page, count: number): Promise<void> => {
+        for (let i = 0; i < 100 && (await autosaveKeys(page)).length !== count; i++) {
+            await page.waitForTimeout(100)
+        }
+        expect((await autosaveKeys(page)).length).toBe(count)
+    }
+    const AMAZING = (): string => `${base}?url=${encodeURIComponent(`${SCORE_HOST}amazing.mscz`)}`
+
+    it('the restore question is about one score: Escape removes only its autosave', async () => {
+        const { page, context } = await newPage()
+        await fastAutosave(context)
+        await page.goto(AMAZING())
+        await scoreShown(page)
+        await modify(page)
+        await waitAutosave(page, 1)
+        await seedScores(page, ['other'], true)
+        const amazing = (await autosaveKeys(page)).find(k => k !== 'other')!
+
+        // the open score is asked about; the others stay
+        await page.goto(base)
+        await page.waitForSelector('dialog.restore-session[open]')
+        expect(await page.textContent('.restore-session-name')).toBe('amazing')
+        await page.keyboard.press('Escape')
+        await page.waitForSelector('dialog.restore-session', { state: 'detached' })
+        await page.waitForFunction(() => !document.querySelector('dialog[open]'))
+        await page.waitForTimeout(200)
+        const left = await autosaveKeys(page)
+        expect(left).toEqual(['other'])
+        expect(left).not.toContain(amazing)
+
+        // the next start asks about the other score, "No" removes its autosave
+        await page.reload()
+        await page.waitForSelector('dialog.restore-session[open]')
+        expect(await page.textContent('.restore-session-name')).toBe('other')
+        await page.click('dialog.restore-session button[value="no"]')
+        await waitAutosave(page, 0)
+        await context.close()
+    }, 180000)
+
+    it('opening the file of a score with unsaved changes keeps them as a separate score', async () => {
+        const { page, context } = await newPage()
+        await fastAutosave(context)
+        await page.goto(AMAZING())
+        await scoreShown(page)
+        const raised = await modify(page)
+        await waitAutosave(page, 1)
+
+        await page.goto(AMAZING())
+        await page.waitForFunction(() => document.getElementById('status')?.textContent?.includes('kept as a separate score'), null, { timeout: 120000 })
+        expect(await statusOf(page)).toContain('amazing (unsaved changes)')
+        expect(await page.textContent('#title')).toBe('amazing') // the file, not modified
+        await waitAutosave(page, 1)
+        await page.click('.app-tabs [role="tab"]:has-text("Home")')
+        expect((await cardNames(page)).sort()).toEqual(['amazing', 'amazing (unsaved changes)'])
+
+        // the file again: the entry of the file is reused, the separate score stays
+        await page.goto(AMAZING())
+        await scoreShown(page)
+        await page.click('.app-tabs [role="tab"]:has-text("Home")')
+        expect((await cardNames(page)).sort()).toEqual(['amazing', 'amazing (unsaved changes)'])
+        await waitAutosave(page, 1)
+
+        // the separate score has the changes
+        await page.click('.score-card:not(.new):has(.card-name:text-is("amazing (unsaved changes)"))')
+        await scoreShown(page)
+        expect(await page.textContent('#title')).toBe('*amazing (unsaved changes)')
+        await page.focus('#viewport')
+        await page.keyboard.press('ControlOrMeta+Home')
+        for (let i = 0; i < 8 && !(await statusOf(page)).startsWith('Note'); i++) {
+            await page.keyboard.press('ArrowRight')
+        }
+        expect(await statusOf(page)).toBe(raised)
+        await context.close()
+    }, 240000)
+
+    it('asks which score to delete when more than 500 scores would be stored', async () => {
+        const { page, context } = await newPage()
+        await page.goto(base)
+        await page.waitForSelector('.home')
+        await seedScores(page, Array.from({ length: 500 }, (_, i) => `seed${String(i).padStart(3, '0')}`))
+
+        // Cancel: nothing is deleted, the score is not opened
+        await page.goto(AMAZING())
+        await page.waitForSelector('dialog.remove-score[open]', { timeout: 120000 })
+        expect(await page.locator('.remove-score-list input').count()).toBe(500)
+        expect(await page.locator('.remove-score-name').first().textContent()).toBe('seed000') // least recently opened
+        expect(await page.locator('.remove-score-list input').first().isChecked()).toBe(true)
+        await page.keyboard.press('Escape')
+        await page.waitForSelector('.home')
+        expect(await view(page)).toBe('home')
+        expect(await scoreCount(page)).toBe(500)
+
+        // the score chosen is deleted, the score is opened and stored
+        await page.goto(AMAZING())
+        await page.waitForSelector('dialog.remove-score[open]', { timeout: 120000 })
+        await page.locator('.remove-score-list input').nth(1).check()
+        await page.click('dialog.remove-score button[value="delete"]')
+        await scoreShown(page)
+        await page.waitForFunction(() => !document.querySelector('dialog[open]'))
+        await page.waitForTimeout(300)
+        expect(await scoreCount(page)).toBe(500)
+        const ids = await idb<string[]>(page, `db => new Promise((res) => {
+            const r = db.transaction('scores').objectStore('scores').getAllKeys(); r.onsuccess = () => res(r.result) })`)
+        expect(ids).toContain('seed000')
+        expect(ids).not.toContain('seed001')
+
+        // the same file again needs no room
+        await page.goto(AMAZING())
+        await scoreShown(page)
+        expect(await page.locator('dialog.remove-score').count()).toBe(0)
+        await context.close()
+    }, 240000)
+
+    it('warns about a score open in another tab and leaves its autosave alone', async () => {
+        const { page, context } = await newPage()
+        await fastAutosave(context)
+        await page.goto(AMAZING())
+        await scoreShown(page)
+        await modify(page)
+        await waitAutosave(page, 1)
+
+        // a new tab: the autosave of the first tab is not left over from a crash
+        const tab2 = await context.newPage()
+        tab2.on('dialog', d => void d.accept())
+        await tab2.goto(base)
+        await tab2.waitForSelector('.score-card:not(.new)')
+        await tab2.waitForTimeout(500)
+        expect(await tab2.locator('dialog.restore-session').count()).toBe(0)
+        await waitAutosave(tab2, 1)
+
+        // opening it: the question; "No" keeps the home screen
+        await tab2.click('.score-card:not(.new)')
+        await tab2.waitForSelector('dialog.message-box[open]')
+        expect(await tab2.textContent('#message-box-text')).toContain('already open in another tab')
+        expect(await tab2.textContent('.message-box-detail')).toContain('whichever tab saves last')
+        await tab2.click('dialog.message-box button[value="no"]')
+        await tab2.waitForTimeout(200)
+        expect(await view(tab2)).toBe('home')
+
+        await tab2.click('.score-card:not(.new)')
+        await tab2.click('dialog.message-box button[value="yes"]')
+        await scoreShown(tab2)
+        await tab2.waitForTimeout(300)
+        expect(await tab2.locator('dialog.message-box').count()).toBe(0) // told already
+
+        // entering the first tab: told once
+        await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+        await page.waitForSelector('dialog.message-box[open]')
+        expect(await page.textContent('#message-box-text')).toContain('also open in another tab')
+        await page.click('dialog.message-box button[value="ok"]')
+        await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+        await page.waitForTimeout(300)
+        expect(await page.locator('dialog.message-box').count()).toBe(0)
+
+        // all tabs closed (the locks are released like after a crash): the autosave is restored at the next start
+        await page.close()
+        await tab2.close()
+        const tab3 = await context.newPage()
+        tab3.on('dialog', d => void d.accept())
+        await tab3.goto(base)
+        await tab3.waitForSelector('dialog.restore-session[open]')
+        await context.close()
+    }, 240000)
+
+    describe('microphone of the playalong', () => {
+        let micBrowser: Browser
+
+        beforeAll(async () => {
+            micBrowser = await chromium.launch({
+                executablePath: CHROME, headless: true,
+                args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'],
+            })
+            // the first start imports the detector: with a cold cache the dev server finds its dependencies and reloads
+            // the page, which would lose the state of a test
+            const { page, context } = await micPage(true)
+            const reload = page.waitForEvent('framenavigated', { timeout: 120000 }).then(() => true)
+            await toggle(page)
+            if (await Promise.race([reload, playalongStatus(page, 'listening').then(() => false)])) {
+                await scoreShown(page)
+                await toggle(page)
+                await playalongStatus(page, 'listening')
+            }
+            await context.close()
+        }, 300000)
+
+        afterAll(async () => {
+            await micBrowser?.close()
+        })
+
+        /** records the streams of getUserMedia; `delay`: the time the browser "asks" */
+        async function micPage(granted: boolean, delay = 0): Promise<{ page: Page; context: BrowserContext }> {
+            const context = await micBrowser.newContext({ viewport: { width: 1280, height: 800 } })
+            await presetNoMigration(context)
+            await context.route(`${SCORE_HOST}**`, route => route.fulfill({
+                body: readFileSync(`${DEMOS}/Amazing_grace.mscz`), headers: { 'access-control-allow-origin': '*' },
+            }))
+            if (granted) {
+                await context.grantPermissions(['microphone'], { origin: new URL(base).origin })
+            } else {
+                // the fake UI of the browser answers every request: like a browser that would ask again
+                await context.addInitScript(() => {
+                    const query = navigator.permissions.query.bind(navigator.permissions)
+                    navigator.permissions.query = async (d) => {
+                        const r = await query(d)
+                        return d.name === 'microphone' ? Object.create(r, { state: { value: 'prompt' } }) as PermissionStatus : r
+                    }
+                })
+            }
+            await context.addInitScript((d) => {
+                const w = window as unknown as { __mic: MediaStream[] }
+                w.__mic = []
+                const gum = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices)
+                navigator.mediaDevices.getUserMedia = async (c) => {
+                    await new Promise(r => setTimeout(r, d))
+                    const s = await gum(c)
+                    w.__mic.push(s)
+                    return s
+                }
+            }, delay)
+            const page = await context.newPage()
+            page.on('pageerror', e => { throw e })
+            await page.goto(`${AMAZING()}&synth=none`)
+            await scoreShown(page)
+            return { page, context }
+        }
+        const tracks = (page: Page): Promise<{ state: string; enabled: boolean }[]> => page.evaluate(() =>
+            (window as unknown as { __mic: MediaStream[] }).__mic.flatMap(s => s.getTracks()).map(t => ({ state: t.readyState, enabled: t.enabled })))
+        const playalongStatus = (page: Page, status: string): Promise<unknown> => page.waitForFunction((st) =>
+            (window as unknown as { __museencorePlayalong?: { state: () => { status: string } } }).__museencorePlayalong?.state().status === st, status, { timeout: 120000 })
+        const toggle = (page: Page): Promise<void> => page.click('[data-action="playalong"]')
+
+        it('is closed when switched off if the permission is granted', async () => {
+            const { page, context } = await micPage(true)
+            await toggle(page)
+            await playalongStatus(page, 'listening')
+            expect(await tracks(page)).toEqual([{ state: 'live', enabled: true }])
+            await toggle(page)
+            await playalongStatus(page, 'off')
+            await page.waitForFunction(() => (window as unknown as { __mic: MediaStream[] }).__mic.every(s => s.getTracks().every(t => t.readyState === 'ended')))
+            await context.close()
+        }, 180000)
+
+        it('is closed by default; with the setting it is kept muted if the browser would ask again', async () => {
+            const { page, context } = await micPage(false)
+            const keepSetting = async (): Promise<void> => {
+                await page.click('[data-action="playback-settings"]')
+                await page.locator('.menu-item:has-text("Keep microphone active during session")').click()
+            }
+            await toggle(page)
+            await playalongStatus(page, 'listening')
+            await toggle(page)
+            await playalongStatus(page, 'off')
+            await page.waitForTimeout(300)
+            expect(await tracks(page)).toEqual([{ state: 'ended', enabled: true }])
+
+            await keepSetting()
+            await toggle(page)
+            await playalongStatus(page, 'listening')
+            await toggle(page)
+            await playalongStatus(page, 'off')
+            await page.waitForTimeout(300)
+            expect((await tracks(page))[1]).toEqual({ state: 'live', enabled: false })
+
+            // switched on again: no new request
+            await toggle(page)
+            await playalongStatus(page, 'listening')
+            expect((await tracks(page)).slice(1)).toEqual([{ state: 'live', enabled: true }])
+            await toggle(page)
+            await playalongStatus(page, 'off')
+            await page.waitForTimeout(300)
+            expect((await tracks(page)).slice(1)).toEqual([{ state: 'live', enabled: false }])
+
+            // turning the setting off closes it at once
+            await keepSetting()
+            await page.waitForFunction(() => (window as unknown as { __mic: MediaStream[] }).__mic.every(s => s.getTracks().every(t => t.readyState === 'ended')))
+            await context.close()
+        }, 180000)
+
+        it('is closed if it is switched off while the browser asks for it', async () => {
+            const { page, context } = await micPage(false, 1500)
+            await toggle(page)
+            await playalongStatus(page, 'loading')
+            await toggle(page)
+            await playalongStatus(page, 'off')
+            await page.waitForFunction(() => (window as unknown as { __mic: MediaStream[] }).__mic.length === 1, null, { timeout: 10000 })
+            await page.waitForFunction(() => (window as unknown as { __mic: MediaStream[] }).__mic.every(s => s.getTracks().every(t => t.readyState === 'ended')), null, { timeout: 5000 })
+            await page.waitForTimeout(200)
+            expect((await page.evaluate(() => (window as unknown as { __museencorePlayalong: { state: () => { status: string } } }).__museencorePlayalong.state().status))).toBe('off')
+            await context.close()
+        }, 180000)
+    })
 })

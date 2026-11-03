@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // MuseEncore: demo/audio-input.ts of basic-pitch-ts (its live microphone demo); changed: the recorder can send the
-// audio to a MessagePort (a worker), StreamResampler is exported (see LICENSE).
+// audio to a MessagePort (a worker), StreamResampler is exported, the microphone is opened and closed by
+// ../microphone.ts and a stop while the browser asks for it ends the start (see LICENSE).
 /*
  * Copyright 2022 Spotify AB
  *
@@ -16,6 +17,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+import { acquireMicrophone, releaseMicrophone, stopMicrophone } from '../microphone';
 
 export const MODEL_SAMPLE_RATE = 22050;
 
@@ -166,8 +168,13 @@ export class AudioInput {
   private stream?: MediaStream;
   private resampler?: StreamResampler;
   private stopTestMelody?: () => void;
+  /** counts the stops: a stop while the browser asks for the microphone ends that start */
+  private stops = 0;
 
-  constructor(private readonly onAudio: (samples: Float32Array) => void) {}
+  constructor(
+    private readonly onAudio: (samples: Float32Array) => void,
+    private readonly keepMicrophone: () => boolean = () => false,
+  ) {}
 
   get sampleRate(): number | undefined {
     return this.context?.sampleRate;
@@ -185,23 +192,29 @@ export class AudioInput {
     await this.stop();
 
     if (kind === 'microphone') {
-      this.stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-        },
+      const stops = this.stops;
+      const stream = await acquireMicrophone({
+        channelCount: 1,
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
       });
+      if (stops !== this.stops) {
+        stopMicrophone(stream);
+        throw new DOMException('stopped while starting', 'AbortError');
+      }
+      this.stream = stream;
     }
 
     let context: AudioContext;
     let source: AudioNode;
     try {
       context = new AudioContext({ sampleRate: MODEL_SAMPLE_RATE });
+      this.context = context;
       source = this.createSource(context, kind);
     } catch {
       // e.g. browsers that can't connect a microphone to a context with a different sample rate
+      void this.context?.close();
       context = new AudioContext();
       source = this.createSource(context, kind);
     }
@@ -239,10 +252,18 @@ export class AudioInput {
     await context.resume();
   }
 
-  async stop() {
+  /** @param release the microphone is closed even if it should be kept */
+  async stop(release = false) {
+    this.stops++;
     this.stopTestMelody?.();
     this.stopTestMelody = undefined;
-    this.stream?.getTracks().forEach(track => track.stop());
+    if (this.stream) {
+      if (release) {
+        stopMicrophone(this.stream);
+      } else {
+        releaseMicrophone(this.stream, this.keepMicrophone);
+      }
+    }
     this.stream = undefined;
     await this.context?.close();
     this.context = undefined;

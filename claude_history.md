@@ -1763,3 +1763,27 @@
   filter level "Calibrated". Checked headless with the test melody (steps, skip, saving); not with a real piano.
   The calibration sheet is opened like a file, so it appears in the home screen's score list.
 
+
+## Keeping the user's work (after the audit)
+
+- Stored scores: the limit is 500 (`MAX_SCORES`); nothing is deleted silently any more. For one more score the "Too many
+  scores are stored" dialog (App.tsx RemoveScoreDialog, session.ts ensureRoomForScore) lets the user choose the score to
+  delete (least recently opened first, without the open score and scores open in other tabs); Cancel does not open the
+  new score, or leaves a save unsaved.
+- Restore question: it names one score; "No" or Escape removes only that score's autosave (MuseScore removes all of them).
+  The other autosaves stay: they are restored when these scores are opened and asked about at the next start.
+- Opening the file of a score with unsaved changes (also `?url=`): the file opens as its own score; the earlier score keeps
+  its autosave as "<name> (unsaved changes)", without hash and file handle (db.ts separateFromFile), so it is neither
+  found by the content nor written to the file.
+- Other tabs (editor/tabs.ts, not in MuseScore): a tab holds a shared Web Lock while a score is open (released by the
+  browser after a crash, held while a tab is frozen). Opening a score open elsewhere asks; entering a tab (focus,
+  visibility, Score page) whose score was opened elsewhere tells once. Autosaves of scores open elsewhere are not offered
+  for restoring and not removed. No locks (insecure context): no warnings.
+- Microphone (shared/notedetection/microphone.ts): a stop while the browser asks for it closes the stream that arrives
+  afterwards (it stayed on before). Closing it can make the browser ask again (Firefox, also with the state "granted", which includes
+  one-time permissions; state "prompt"): there "Keep microphone active during session" (Playback settings, default off for privacy,
+  settings.playback.playalongKeepMicrophone) keeps it open with disabled tracks until the tab is closed. With a permanent
+  permission it is always closed. Checked in headless Chrome with a fake device (the "ask again" state is simulated); not
+  in Firefox or Safari. The new strings' translations are unreviewed machine translations.
+- Tests: test/microphone.test.ts, editor.e2e.ts ("the restore question…", "opening the file…", "asks which score…",
+  "warns about a score…", "microphone of the playalong").

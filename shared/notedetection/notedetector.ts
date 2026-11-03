@@ -109,6 +109,8 @@ export interface NoteDetectorOptions {
     /** 'test-melody': a synthesized melody instead of the microphone (development) */
     input?: 'microphone' | 'test-melody'
     settings?: Partial<NoteDetectorSettings>
+    /** the microphone stays open (muted) when listening stops if the browser would ask for it again; see microphone.ts */
+    keepMicrophone?: () => boolean
 }
 
 /** the note detector (loaded on first use: its model and libraries are big) */
