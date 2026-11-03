@@ -1,8 +1,9 @@
 /*
  * SPDX-License-Identifier: GPL-3.0-only
  * Preferences (MuseScore's PreferencesDialog.qml): pages in a side bar; for now "General" with the language,
- * "Save & publish" with the auto save (SaveAndPublishPreferencesPage.qml: AutoSaveSection) and "Note input" with the
- * note preview (NoteInputPreferencesPage.qml: NotePreviewSection; there is no MIDI input), "Import"
+ * "Save & publish" with the auto save (SaveAndPublishPreferencesPage.qml: AutoSaveSection), "Note input" with the MIDI
+ * devices and the note preview (NoteInputPreferencesPage.qml: MidiInputSection, NotePreviewSection), "Audio & MIDI"
+ * (AudioMidiPreferencesPage.qml: MidiDevicesSection, the input only), "MIDI mappings" (MidiDeviceMappingPage.qml), "Import"
  * (ImportPreferencesPage.qml: the style for imports, MusicXML and MIDI; Overture, MEI and MNX are not ported) and "Web
  * version" with the settings of the web version (not in MuseScore).
  */
@@ -11,12 +12,17 @@ import { actionTitle, formatShortcut, shortcuts } from '../actions/actions'
 import { ICON_CODES } from '../actions/uiactiondata'
 import { arg, currentLanguage, languageList, qtrc, setLanguage, useLanguage, webtr } from '../i18n'
 import { pickFile } from '../files'
+import { NONE_DEVICE_ID } from '../../src/index'
 import { updateSettings, useSettings } from '../settings'
+import { MidiMappingsPage } from './MidiMappingsPage'
+import { inputDeviceSelected, isMidiInputOn, midiAccessProblem, setMidiInputOn, useMidiState } from '../midi/midicontroller'
 
 const PAGES: readonly { id: string; title: string; icon: number; web?: boolean }[] = [
     { id: 'general', title: 'General', icon: ICON_CODES.SETTINGS_COG },
     { id: 'cloud', title: 'Save & publish', icon: ICON_CODES.CLOUD_FILE },
     { id: 'note-input', title: 'Note input', icon: ICON_CODES.EDIT },
+    { id: 'audio-midi', title: 'Audio & MIDI', icon: ICON_CODES.AUDIO },
+    { id: 'midi-device-mapping', title: 'MIDI mappings', icon: ICON_CODES.MIDI_INPUT },
     { id: 'import', title: 'Import', icon: ICON_CODES.IMPORT },
     { id: 'web', title: 'Web version', icon: ICON_CODES.GLOBE, web: true },
 ]
@@ -81,11 +87,62 @@ function SaveAndPublishPage(): React.JSX.Element {
     )
 }
 
-/** NotePreviewSection.qml */
+/** why the browser gives no access to MIDI devices */
+function MidiAccessHint(): React.JSX.Element | null {
+    const problem = midiAccessProblem(useMidiState().access)
+    return problem ? <p className="muted hint midi-access-hint">{problem}</p> : null
+}
+
+/** MidiInputSection.qml */
+function MidiInputSection(): React.JSX.Element {
+    const { midi } = useSettings()
+    const { access } = useMidiState()
+    const on = isMidiInputOn()
+    return (
+        <section className="preferences-section midi-devices" aria-labelledby="pref-midi-devices">
+            <h3 id="pref-midi-devices">{qtrc('preferences', 'MIDI devices')}</h3>
+            <label className="check">
+                <input type="checkbox" checked={on} disabled={access === 'unsupported'} onChange={e => setMidiInputOn(e.target.checked)} />
+                {qtrc('preferences', 'Enable MIDI input')}
+            </label>
+            <MidiAccessHint />
+            <label className="check">
+                <input type="checkbox" disabled={!on} checked={midi.startNoteInputWhenPressingKey}
+                    onChange={e => updateSettings('midi', { startNoteInputWhenPressingKey: e.target.checked })} />
+                {qtrc('preferences', 'When pressing a key, begin note input at the selected measure, note, or rest')}
+            </label>
+            <details className="preferences-expandable">
+                <summary>{qtrc('preferences', 'Real-time input modes')}</summary>
+                <label className="check">
+                    <input type="checkbox" disabled={!on} checked={midi.advanceToNextNoteOnKeyRelease}
+                        onChange={e => updateSettings('midi', { advanceToNextNoteOnKeyRelease: e.target.checked })} />
+                    {qtrc('preferences', 'Advance to next note on key release')}
+                </label>
+                <div className="autosave-row">
+                    <span>{qtrc('preferences', 'Delay between notes')}</span>
+                    <span className="number-with-unit">
+                        <input type="number" min={1} max={10000} step={1} disabled={!on} aria-label={qtrc('preferences', 'Delay between notes')}
+                            value={midi.realtimeDelay}
+                            onChange={(e) => {
+                                const v = Math.round(Number(e.target.value))
+                                if (v >= 1 && v <= 10000) {
+                                    updateSettings('midi', { realtimeDelay: v })
+                                }
+                            }} />
+                        {' ' + qtrc('global', 'ms')}
+                    </span>
+                </div>
+            </details>
+        </section>
+    )
+}
+
+/** NoteInputPreferencesPage.qml: MidiInputSection, NotePreviewSection */
 function NoteInputPage(): React.JSX.Element {
     useLanguage()
-    const { playback } = useSettings()
+    const { playback, midi } = useSettings()
     const play = playback.playNotesWhenEditing
+    const midiBoxEnabled = isMidiInputOn() && play
     const check = (key: 'playChordWhenEditing' | 'playHarmonyWhenEditing' | 'playPreviewNotesInInputByDuration' | 'playPreviewNotesWithScoreDynamics',
                    text: string): React.JSX.Element => (
         <label className="check">
@@ -95,6 +152,8 @@ function NoteInputPage(): React.JSX.Element {
         </label>
     )
     return (
+        <>
+        <MidiInputSection />
         <section className="preferences-section" aria-labelledby="pref-note-preview">
             <h3 id="pref-note-preview">{qtrc('preferences', 'Note preview')}</h3>
             <label className="check">
@@ -119,6 +178,40 @@ function NoteInputPage(): React.JSX.Element {
             {check('playHarmonyWhenEditing', 'Play chord symbols and Nashville numbers')}
             {check('playPreviewNotesInInputByDuration', 'Play when setting pitch (input by duration mode only)')}
             {check('playPreviewNotesWithScoreDynamics', 'Play preview notes with score dynamics')}
+            <label className="check">
+                <input type="checkbox" disabled={!midiBoxEnabled} checked={midiBoxEnabled && playback.playNotesOnMidiInput}
+                    onChange={e => updateSettings('playback', { playNotesOnMidiInput: e.target.checked })} />
+                {qtrc('preferences', 'Play MIDI input')}
+            </label>
+            <label className="check">
+                <input type="checkbox" disabled={!midiBoxEnabled || !playback.playNotesOnMidiInput}
+                    checked={midiBoxEnabled && midi.useMidiVelocityAndDuration}
+                    onChange={e => updateSettings('midi', { useMidiVelocityAndDuration: e.target.checked })} />
+                {qtrc('preferences', 'Play MIDI notes with velocity and duration during note input')}
+            </label>
+        </section>
+        </>
+    )
+}
+
+/**
+ * AudioMidiPreferencesPage.qml: MidiDevicesSection. The input only: the sound output of a browser goes to its own
+ * synthesizer, so there is no audio API, MIDI output or MIDI 2.0
+ */
+function AudioMidiPage(): React.JSX.Element {
+    useLanguage()
+    const { access, devices, deviceId } = useMidiState()
+    return (
+        <section className="preferences-section" aria-labelledby="pref-midi">
+            <h3 id="pref-midi">{qtrc('preferences', 'MIDI')}</h3>
+            <div className="autosave-row">
+                <span>{qtrc('preferences', 'MIDI input')}</span>
+                <select aria-label={qtrc('preferences', 'MIDI input')} disabled={access !== 'granted'} value={deviceId || NONE_DEVICE_ID}
+                    onChange={e => inputDeviceSelected(e.target.value)}>
+                    {devices.map(d => <option key={d.id} value={d.id}>{d.id === NONE_DEVICE_ID ? qtrc('midi', 'No device') : d.name}</option>)}
+                </select>
+            </div>
+            <MidiAccessHint />
         </section>
     )
 }
@@ -246,6 +339,8 @@ export function PreferencesDialog({ onClose }: { onClose: () => void }): React.J
                     {page === 'general' && <GeneralPage />}
                     {page === 'cloud' && <SaveAndPublishPage />}
                     {page === 'note-input' && <NoteInputPage />}
+                    {page === 'audio-midi' && <AudioMidiPage />}
+                    {page === 'midi-device-mapping' && <MidiMappingsPage />}
                     {page === 'import' && <ImportPage />}
                     {page === 'web' && <WebVersionPage />}
                 </div>

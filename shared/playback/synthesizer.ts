@@ -34,6 +34,8 @@ export interface Synthesizer {
     isLoaded(): boolean
     /** starts the audio output; must be called from a user gesture (autoplay policy) */
     resume(): Promise<void>
+    /** the audio output runs: until then the clock stands and what is scheduled would sound later, all at once */
+    isRunning(): boolean
     setupChannel(channel: number, setup: SynthChannelSetup, time?: number): void
     noteOn(channel: number, pitch: number, velocity: number, time?: number): void
     noteOff(channel: number, pitch: number, time?: number): void
@@ -70,6 +72,7 @@ export class NullSynthesizer implements Synthesizer {
     async load(): Promise<void> { this.m_loaded = true }
     isLoaded(): boolean { return this.m_loaded }
     async resume(): Promise<void> {}
+    isRunning(): boolean { return true }
 
     private record(type: SynthLogEntry['type'], channel: number, a: number, b: number, time?: number): void {
         this.log.push({ type, channel, a, b, time: time ?? this.currentTime() })

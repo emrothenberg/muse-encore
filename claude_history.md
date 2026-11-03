@@ -1793,3 +1793,20 @@
   The new strings' translations are unreviewed machine translations.
 - Viewer package: option `colorScheme` ('auto' = the browser's, also for any other value; 'light', 'dark') replaces `theme`, which is removed (breaking for embeds using it). The examples with options use colorScheme: 'light'.
 - Viewer: the center button ("Center page") has the editor's icon carbon:center-to-fit, defined once in shared/icons.ts. Compared the viewer's other icons with the editor's: all equal.
+
+
+## MIDI input
+
+- Library: framework/midi (MidiEvent, WebMidiInPort: Web MIDI instead of CoreMIDI/ALSA/WinMM), framework/midiremote (MidiRemote), complete port of
+  NotationMidiInput (queue with 20 ms batches, note on/off, active pitches, shift adds to the chord, written/sounding pitch, input by duration with held keys,
+  real-time modes with ties over the advance, note extension timer, metronome on/off, 100 ms between tick and advance like C++, preview outside of note input,
+  velocity and duration, sustain/modulation/pitch bend), Score.activeMidiPitches, addTiedMidiPitch, realtimeAdvance with the held keys. onNoteOns stays for the microphone.
+- Editor: editor/midi/midicontroller.ts (MidiInputOutputController); UI as in MuseScore: Playback settings "Enable MIDI input" (midi-on) and "MIDI input pitch"; Preferences
+  "Note input" (MIDI devices section, Play MIDI input, velocity and duration), "Audio & MIDI" (MIDI input), "MIDI mappings" with the assign dialog.
+- Differences that the browser requires: permission (asked by "Enable MIDI input", silently connected if given before; midi-on is checked only with access); Safari has no Web MIDI
+  (explained, action disabled); several tabs get the events: only the visible, last focused tab takes them (note offs follow their note on); a MIDI event is no user gesture, so before the
+  first gesture of the page there is no sound and the notes are not queued (Synthesizer.isRunning); device changes come from statechange (no polling), a device plugged in later is connected if none was chosen;
+  a stored device is also found by its name (ids can change).
+- Deliberate differences from C++: nothing happens behind an open dialog or during the playalong; assigning a mapping does not also enter notes; "MIDI remote control" off really disables the mappings (C++ only disables the list).
+- Not ported: MIDI output and "Produce MIDI 2.0 output" (the sound goes to the browser's synthesizer; only MIDI 1.0 input), MMC (needs the sysex permission), multi-selection and the Reset of the mappings page.
+- Tests: test/midiinput.test.ts (fake device), editor.e2e.ts "MIDI input" (fake API in the browser). Checked once in real headless Chrome with a virtual CoreMIDI source (Swift script: notes, chords, note on with velocity 0, preferences, assigning a mapping, playback by a mapped key). Not checked with a physical device, in Firefox or with audible sound. The two new strings' translations are unreviewed machine translations.

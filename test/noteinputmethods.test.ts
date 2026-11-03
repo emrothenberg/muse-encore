@@ -2,7 +2,7 @@
 // Note input methods (re-pitch, insert, real-time, rhythm), tuplets, slurs, hairpins, ottavas, grace notes, beams,
 // intervals and full-measure rests through MuseScore's actions (executeAction), each undone and redone: undo restores
 // the SVG of all pages exactly, redo repeats the change.
-import { beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import {
     createScore, defaultNewScoreOptions, enterMidiNotes, executeAction, isActionChecked, isActionEnabled, redo, undo, type MasterScore,
 } from '../src/index'
@@ -134,9 +134,15 @@ describe('note input methods and line/tuplet commands', () => {
         // C++: a note entered with the note name keys (putNote) moves the cursor like in the other modes
         run(score, 'note-c')
         expect(score.inputState().tick().ticks()).toBe(480)
+        // C++: the advance comes 100 ms after the metronome tick
+        vi.useFakeTimers()
         run(score, 'realtime-advance')
+        expect(score.inputState().tick().ticks()).toBe(480)
+        vi.advanceTimersByTime(100)
         expect(score.inputState().tick().ticks()).toBe(960)
         run(score, 'note-e', 'realtime-advance')
+        vi.advanceTimersByTime(600)
+        vi.useRealTimers()
         expect(score.inputState().tick().ticks()).toBe(1920)
         expect(contents(m1)).toEqual(['72:1/4', 'r:1/4', '76:1/4', 'r:1/4'])
         run(score, 'note-input')

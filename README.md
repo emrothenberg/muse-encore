@@ -35,6 +35,8 @@ Like MuseScore, this project is licensed under the GNU General Public License v3
 * Note detection from the microphone (not in MuseScore yet): the editor detects the notes you play, enters them into
   the score in note input mode and offers a playalong mode that follows the score while you play. Everything is
   processed in the browser.
+* MIDI input works with the browser's MIDI API: the browser asks for permission when you turn on "Enable MIDI input"
+  (in the Playback settings or the Preferences), and Safari has no MIDI support. There is no MIDI output.
 * Continuous view (see the screenshots below):
   * a different look (in my opinion, a better one)
   * an additional "fit to window" mode, which lays out the score as wide as the window

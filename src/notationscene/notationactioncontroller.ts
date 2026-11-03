@@ -1347,7 +1347,7 @@ export class NotationActionController {
 
     /** C++ currentNotationMidiInput() (the Notation owns it in C++) */
     midiInput(): NotationMidiInput {
-        this.m_midiInput ??= new NotationMidiInput(() => this.score(), this.interaction(), this.interaction().undoStack())
+        this.m_midiInput ??= new NotationMidiInput(() => this.score(), this.interaction(), this.interaction().undoStack(), code => this.dispatch(code))
         return this.m_midiInput
     }
 

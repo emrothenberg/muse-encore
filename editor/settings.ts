@@ -58,12 +58,37 @@ export interface AppSettings {
     palettes: Record<string, unknown> | null
     /** the playback (NotationConfiguration, PlaybackConfiguration) and the mute button of this app */
     playback: PlaybackSettings
+    /** the MIDI input (MidiConfiguration, NotationConfiguration, MidiRemoteConfiguration) */
+    midi: MidiSettings
     /** settings of the web version (not in MuseScore) */
     web: WebSettings
     /** the settings of the export formats (ImagesExportConfiguration, MidiConfiguration, MusicXmlConfiguration) */
     export: ExportConfiguration
     /** Preferences > Import: the style for imports and the settings of the import formats */
     import: ImportSettings
+}
+
+export interface MidiSettings {
+    /** NotationConfiguration::isMidiInputEnabled (without the browser's permission there is no input anyway) */
+    inputEnabled: boolean
+    /** MidiConfiguration::midiInputDeviceId: "" = the first available device, "-1" = no device */
+    inputDeviceId: string
+    /** the name of the device (not in MuseScore): the id of a device can change in a browser */
+    inputDeviceName: string
+    /** startNoteInputAtSelectedNoteRestWhenPressingMidiKey */
+    startNoteInputWhenPressingKey: boolean
+    /** MidiRemoteConfiguration::advanceToNextNoteOnKeyRelease */
+    advanceToNextNoteOnKeyRelease: boolean
+    /** delayBetweenNotesInRealTimeModeMilliseconds */
+    realtimeDelay: number
+    /** midiUseWrittenPitch */
+    useWrittenPitch: boolean
+    /** useMidiVelocityAndDurationDuringNoteInput */
+    useMidiVelocityAndDuration: boolean
+    /** MidiConfiguration::useRemoteControl */
+    useRemoteControl: boolean
+    /** the actions of MIDI keys and controllers (C++ midi_mappings.xml) */
+    mappings: { action: string; event: { type: number; value: number } }[]
 }
 
 export interface ImportSettings extends ImportConfiguration {
@@ -107,6 +132,8 @@ export interface PlaybackSettings {
     playPreviewNotesInInputByDuration: boolean
     /** playPreviewNotesWithScoreDynamics */
     playPreviewNotesWithScoreDynamics: boolean
+    /** PlaybackConfiguration::playNotesOnMidiInput ("Play MIDI input") */
+    playNotesOnMidiInput: boolean
     /** notePlayDurationMilliseconds ("Playback duration") */
     notePlayDuration: number
 }
@@ -161,7 +188,11 @@ const DEFAULTS: AppSettings = {
     playback: {
         muted: false, metronome: false, countIn: false, pan: true, smoothPan: false, playRepeats: true, playChordSymbols: true, playalongPractice: false, playalongOvertoneFilter: 'normal', playalongCalibration: null, playalongKeepMicrophone: false,
         playNotesWhenEditing: true, playChordWhenEditing: true, playHarmonyWhenEditing: true,
-        playPreviewNotesInInputByDuration: true, playPreviewNotesWithScoreDynamics: true, notePlayDuration: 500,
+        playPreviewNotesInInputByDuration: true, playPreviewNotesWithScoreDynamics: true, playNotesOnMidiInput: true, notePlayDuration: 500,
+    },
+    midi: {
+        inputEnabled: true, inputDeviceId: '', inputDeviceName: '', startNoteInputWhenPressingKey: true, advanceToNextNoteOnKeyRelease: true,
+        realtimeDelay: 750, useWrittenPitch: true, useMidiVelocityAndDuration: true, useRemoteControl: true, mappings: [],
     },
     web: { spacePan: true },
     export: defaultExportConfiguration(),
@@ -218,10 +249,20 @@ function sanitize(s: Partial<{ [K in keyof AppSettings]: Partial<AppSettings[K]>
         },
         palettes: s.palettes && typeof s.palettes === 'object' && !Array.isArray(s.palettes) ? s.palettes as Record<string, unknown> : null,
         playback: sanitizePlayback(s.playback ?? {}),
+        midi: sanitizeMidi(s.midi ?? {}),
         web: { spacePan: typeof s.web?.spacePan === 'boolean' ? s.web.spacePan : DEFAULTS.web.spacePan },
         export: sanitizeExport(s.export ?? {}),
         import: sanitizeImport(s.import ?? {}),
     }
+}
+
+function sanitizeMidi(m: Partial<MidiSettings>): MidiSettings {
+    const merged = mergeTyped(DEFAULTS.midi, m)
+    merged.realtimeDelay = merged.realtimeDelay > 0 ? merged.realtimeDelay : DEFAULTS.midi.realtimeDelay
+    merged.mappings = Array.isArray(m.mappings)
+        ? m.mappings.filter(x => typeof x?.action === 'string' && typeof x.event?.type === 'number' && typeof x.event?.value === 'number')
+        : []
+    return merged
 }
 
 function sanitizeImport(i: Partial<ImportSettings>): ImportSettings {
@@ -262,6 +303,7 @@ function sanitizePlayback(p: Partial<PlaybackSettings>): PlaybackSettings {
         playChordWhenEditing: b('playChordWhenEditing'), playHarmonyWhenEditing: b('playHarmonyWhenEditing'),
         playPreviewNotesInInputByDuration: b('playPreviewNotesInInputByDuration'),
         playPreviewNotesWithScoreDynamics: b('playPreviewNotesWithScoreDynamics'),
+        playNotesOnMidiInput: b('playNotesOnMidiInput'),
         // NotePreviewSection: 0..10000 ms
         notePlayDuration: typeof p.notePlayDuration === 'number' && p.notePlayDuration >= 0 && p.notePlayDuration <= 10000
             ? p.notePlayDuration : d.notePlayDuration,
