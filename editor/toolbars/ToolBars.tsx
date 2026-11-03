@@ -26,6 +26,15 @@ const ICON = { grip: '', plus: '', cog: '', chevronDown: '', up: '�
 //   buttons
 // ---------------------------------------------------------------------------------
 
+/** icons MuseScore's icon font does not have (carbon:center-to-fit from Iconify) */
+const SVG_ICONS: Record<string, React.JSX.Element> = {
+    'view-center-page': (
+        <svg width="1em" height="1em" viewBox="0 0 32 32" style={{ display: 'block' }}>
+            <path fill="currentColor" d="M8 2H2v6h2V4h4zm16 0h6v6h-2V4h-4zM8 30H2v-6h2v4h4zm16 0h6v-6h-2v4h-4zm0-6H8a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2M8 10v12h16V10Z" />
+        </svg>
+    ),
+}
+
 function tooltip(code: string): string {
     const sc = shortcutText(code)
     return sc ? `${actionDescription(code)} (${sc})` : actionDescription(code)
@@ -43,7 +52,7 @@ export function ActionButton({ code, showTitle = false, bold = false, menu }: {
     const def = actionDefinition(code)
     const enabled = isActionEnabled(code) || (!!menu && menu.length > 0)
     const checked = isActionChecked(code)
-    const icon = def?.icon ? String.fromCodePoint(def.icon) : ''
+    const icon = SVG_ICONS[code] ?? (def?.icon ? String.fromCodePoint(def.icon) : '')
     const [open, setOpen] = useState(false)
     const ref = useRef<HTMLButtonElement>(null)
     return (

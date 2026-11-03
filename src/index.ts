@@ -8,6 +8,7 @@
  */
 
 import { EditStyle } from './notationscene/editstyle'
+import { ScoreRangeUtilities } from './notation/utilities/scorerangeutilities'
 import { CanvasPaintProvider, type Canvas2D } from './framework/draw/canvaspaintprovider'
 import { Painter } from './framework/draw/painter'
 import { Transform } from './framework/draw/types/transform'
@@ -1133,6 +1134,21 @@ export function selectionBounds(score: Score): { page: number; x: number; y: num
         }
     }
     return res
+}
+
+/** The page and rectangle (inches from the page's top left) of the first measure, like the frame of its range selection. */
+export function firstMeasureBounds(score: Score): { page: number; x: number; y: number; width: number; height: number } | null {
+    const m = score.firstMeasureMM()
+    if (!m) {
+        return null
+    }
+    const frame = ScoreRangeUtilities.boundingArea(score, m.firstEnabled(), m.last(), 0, score.nstaves())[0]
+    const page = frame ? notationState(score).interaction.point2page(frame.center(), true) : null
+    if (!page) {
+        return null
+    }
+    const r = frame.translated(page.pos().times(-1))
+    return { page: score.pages().indexOf(page), x: r.x() / DPI, y: r.y() / DPI, width: r.width() / DPI, height: r.height() / DPI }
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

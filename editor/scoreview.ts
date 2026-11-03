@@ -11,7 +11,7 @@ import { isInstrumentChangeSymbol, withSelectedInstrument } from './dialogs/inst
 import { useSyncExternalStore } from 'react'
 import {
     clearSelection, drawPage, drawPageSvg, setCanLayoutIcons, hasSelection, initEngravingFonts, isModified, isTwoSided, moveSelection,
-    noteInputCursorBounds, noteInputState, onImageDecoded, onNotationChanged, pageCount, pageSize, scoreTitle, selectAll, selectionBounds, selectionInfo,
+    firstMeasureBounds, noteInputCursorBounds, noteInputState, onImageDecoded, onNotationChanged, pageCount, pageSize, scoreTitle, selectAll, selectionBounds, selectionInfo,
     SvgGlyphDefs, type MasterScore, type Score, currentNotation, onCurrentNotationChanged, setViewMode as setScoreViewMode, type ViewMode, drawContinuousPanel,
     // copy/paste, text editing, drag
     CLIPBOARD_FORMATS, clipboardContents, executeAction, isActionEnabled, isDragging, setClipboardContents, setClipboardImage, textEditingInfo,
@@ -968,11 +968,15 @@ export function centerPage(idx = currentPage()): void {
 }
 
 /**
- * The "Center page" button: centers the selection (e.g. the selected measures; the rectangles on the page of the
- * first one) or, without a selection, the current page
+ * The "Center measure" button: centers the selection (e.g. the selected measures; the rectangles on the page of the
+ * first one) or, without a selection, the first measure of the score
  */
-export function centerSelectionOrPage(): void {
-    const rects = score ? selectionBounds(score) : []
+export function centerSelectionOrFirstMeasure(): void {
+    let rects = score ? selectionBounds(score) : []
+    if (!rects.length) {
+        const first = score ? firstMeasureBounds(score) : null
+        rects = first ? [first] : []
+    }
     if (!rects.length) {
         centerPage()
         return

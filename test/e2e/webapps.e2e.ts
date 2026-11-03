@@ -269,7 +269,7 @@ describe.skipIf(!CHROME || !hasSubmodule).each(['viewer', 'editor'])('%s', (app)
         await context.close()
     }, 120000)
 
-    it('moves the view beyond the pages and centers the page again', async () => {
+    it('moves the view beyond the pages and centers the page (editor: the first measure) again', async () => {
         const { page, context } = await newPage()
         await openScore(page, 'amazing.mscz')
         await handDrag(page, app, 1500, 1200)
@@ -280,12 +280,17 @@ describe.skipIf(!CHROME || !hasSubmodule).each(['viewer', 'editor'])('%s', (app)
         })
         expect(moved).toEqual([48, 48]) // only a strip of the page stays visible
         await page.click(sel.center)
-        expect(await pageCenterOffset(page)).toEqual([0, 0])
-        if (editor) {
+        if (!editor) {
+            expect(await pageCenterOffset(page)).toEqual([0, 0])
+        } else {
+            // without a selection: the first measure, in the upper left part of the page
+            const [firstX, firstY] = await pageCenterOffset(page)
+            expect(firstX).toBeGreaterThan(50)
+            expect(firstY).toBeGreaterThan(50)
             // the middle mouse button moves the view too
             await handDrag(page, app, 300, 200, true)
-            expect(await pageCenterOffset(page)).toEqual([300, 200])
-            // with a selection the center button centers it, not the page (the music fills only the upper part of the page)
+            expect(await pageCenterOffset(page)).toEqual([firstX + 300, firstY + 200])
+            // with a selection the center button centers it, not the first measure (the music fills only the upper part of the page)
             await page.focus('#viewport')
             await page.keyboard.press('ControlOrMeta+a')
             await page.click(sel.center)
@@ -425,6 +430,21 @@ describe.skipIf(!CHROME || !hasSubmodule).each(['viewer', 'editor'])('%s', (app)
         expect(await page.evaluate(() => document.querySelector('#score1 .muse-encore-viewer')!.shadowRoot!.querySelectorAll('.page').length)).toBe(1)
         // the viewer does not take the focus of the page
         expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true)
+        await context.close()
+    }, 120000)
+
+    it.runIf(app === 'viewer').each([
+        // browser, options, expected
+        ['light', { colorScheme: 'dark' }, 'dark'],
+        ['dark', { colorScheme: 'light' }, 'light'],
+        ['dark', { colorScheme: 'auto' }, 'dark'],
+        ['light', {}, 'light'],
+        ['dark', { colorScheme: 'blue' }, 'dark'],
+    ] as const)('color scheme: browser %s, options %j: %s', async (browserScheme, options, expected) => {
+        const { page, context } = await newPage({ colorScheme: browserScheme })
+        await page.goto(`${base}embed.html?url=${encodeURIComponent(SCORE_HOST + 'twosided.mscz')}&options=${encodeURIComponent(JSON.stringify(options))}`)
+        const scheme = await page.evaluate(() => getComputedStyle(document.querySelector('#score1 .muse-encore-viewer')!).colorScheme)
+        expect(scheme).toBe(expected)
         await context.close()
     }, 120000)
 
