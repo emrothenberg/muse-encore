@@ -10,17 +10,19 @@ import {
     pageFormatSize, pageSize, saveMscz, scoreAppVersion, scoreMigrationType, scoreTitle, withPageView, type MasterScore, type NewScoreOptions,
 } from '../src/index'
 import {
-    addScore, autosaveIds, contentHash, loadAutosave, loadScoreContent, openScoreId, removeAllAutosaves, removeAutosave,
-    saveScoreContent, setOpenScoreId, takeLegacyLastFile, updateScore, type ScoreEntry,
+    addScore, autosaveIds, contentHash, countScores, loadAutosave, loadScoreContent, MAX_SCORES, openScoreId, removeAutosave, removeScore,
+    saveScoreContent, scoreIdsWithHash, scoreName, scoresLeastRecentFirst, scoresWithUnsavedChanges, separateFromFile, setOpenScoreId,
+    takeLegacyLastFile, updateScore, type ScoreEntry,
 } from './db'
 import { baseName, isMsczName, msczFileName, pickFileToOpen, saveToComputer, writeFile, type FilePickerType } from './files'
 import { showMessage } from './components/MessageBox'
-import { arg, qtrc } from './i18n'
+import { arg, qtrc, webtr } from './i18n'
 import {
     clearScore, currentMasterScore, currentScore, fontsReady, handlers, hideBusy, resumeBusy, scoreChanged, scoreSaved, setScoreName, setStatus, showBusy,
     showScore, viewShown,
 } from './scoreview'
 import { settings, updateSettings, type StoredMigrationOptions } from './settings'
+import { holdOpenScore, scoresOpenElsewhere } from './tabs'
 
 export interface CurrentScore {
     /** the id of its stored entry; null if it could not be stored */
@@ -46,10 +48,14 @@ export interface SessionState {
     /** the open score */
     current: CurrentScore | null
     newScoreDialog: boolean
-    /** another dialog of the app; the questions (saveChanges, saveAs, restoreSession, migration) are answered with answerDialog() */
-    dialog: 'preferences' | 'about' | 'transpose' | 'clearRecent' | 'revertFactory' | 'saveChanges' | 'saveAs' | 'restoreSession' | 'migration' | null
+    /** another dialog of the app; the questions (saveChanges, saveAs, restoreSession, migration, removeScore) are answered with answerDialog() */
+    dialog: 'preferences' | 'about' | 'transpose' | 'clearRecent' | 'revertFactory' | 'saveChanges' | 'saveAs' | 'restoreSession' | 'migration' | 'removeScore' | null
     /** the name proposed by the Save as dialog */
     saveAsName: string
+    /** the name of the score the restore dialog is about */
+    restoreName: string
+    /** the scores the "Too many scores" dialog offers for deleting, the first one is proposed */
+    removableScores: ScoreEntry[]
     /** the last error, shown on the home screen */
     error: string | null
     /** the question of the migration dialog (answered with the chosen options, or null if it was closed) */
@@ -66,7 +72,7 @@ export interface MigrationQuestion {
 }
 
 let state: SessionState = {
-    view: 'home', current: null, newScoreDialog: false, dialog: null, saveAsName: '', error: null, migration: null, question: 0,
+    view: 'home', current: null, newScoreDialog: false, dialog: null, saveAsName: '', restoreName: '', removableScores: [], error: null, migration: null, question: 0,
 }
 const listeners = new Set<() => void>()
 
@@ -122,7 +128,7 @@ export function session(): SessionState {
 // the questions (IInteractive::question etc.): a dialog whose answer resolves a promise
 let answerQuestion: ((answer: unknown) => void) | null = null
 
-function ask<T>(dialog: 'saveChanges' | 'saveAs' | 'restoreSession' | 'migration', patch: Partial<SessionState> = {}): Promise<T> {
+function ask<T>(dialog: 'saveChanges' | 'saveAs' | 'restoreSession' | 'migration' | 'removeScore', patch: Partial<SessionState> = {}): Promise<T> {
     answerQuestion?.(undefined)
     return new Promise<T>((resolve) => {
         answerQuestion = resolve as (answer: unknown) => void
@@ -353,7 +359,53 @@ function unsaved(s: MasterScore): MasterScore {
     return s
 }
 
+/**
+ * For one more stored score (`MAX_SCORES` are stored): the user chooses a score to delete; the open score and scores
+ * open in other tabs are not offered. false if cancelled.
+ */
+async function ensureRoomForScore(): Promise<boolean> {
+    while (await countScores() >= MAX_SCORES) {
+        const elsewhere = await scoresOpenElsewhere()
+        const removableScores = (await scoresLeastRecentFirst()).filter(e => e.id !== state.current?.id && !elsewhere.has(e.id))
+        if (!removableScores.length) {
+            return true
+        }
+        const id = await ask<string | null | undefined>('removeScore', { removableScores })
+        setState({ removableScores: [] })
+        if (!id) {
+            return false
+        }
+        await removeScore(id)
+    }
+    return true
+}
+
+/** the score of the file has a name that tells it apart from the file opened again */
+function nameWithUnsavedChanges(name: string): string {
+    const suffix = /\.[^.]+$/.exec(name)?.[0] ?? ''
+    return arg(webtr('%1 (unsaved changes)'), name.slice(0, name.length - suffix.length)) + suffix
+}
+
+/** the score is already open in another tab: asks whether to open it here as well */
+async function confirmOpenedElsewhere(ids: readonly string[]): Promise<boolean> {
+    const id = ids.find(i => i !== state.current?.id)
+    const elsewhere = await scoresOpenElsewhere()
+    if (!id || !ids.some(i => elsewhere.has(i))) {
+        return true
+    }
+    if (await showMessage(webtr('This score is already open in another tab. Do you want to open it here as well?'), TABS_DO_NOT_SHARE(), ['no', 'yes']) !== 'yes') {
+        return false
+    }
+    s_warnedOpenElsewhere = id
+    return true
+}
+
 export async function openFileData(name: string, data: ArrayBuffer, source: 'file' | 'url', url?: string, handle?: FileSystemFileHandle): Promise<void> {
+    const hash = await contentHash(data)
+    const sameFile = hash ? await scoreIdsWithHash(hash) : []
+    if (!(await confirmOpenedElsewhere(sameFile))) {
+        return
+    }
     if (!(await closeOpenedScore())) {
         return
     }
@@ -361,15 +413,33 @@ export async function openFileData(name: string, data: ArrayBuffer, source: 'fil
     if (!s) {
         return
     }
+    // a score of this file with unsaved changes stays as a separate score with its autosave (unless these changes are
+    // being made in another tab); the file opens as its own score
+    const elsewhere = await scoresOpenElsewhere()
+    const unsavedChanges = (await scoresWithUnsavedChanges(sameFile)).filter(id => !elsewhere.has(id))
+    if (sameFile.every(id => unsavedChanges.includes(id)) && !(await ensureRoomForScore())) {
+        clearScore()
+        setStatus('')
+        return
+    }
+    let keptAs: string | null = null
+    for (const id of unsavedChanges) {
+        keptAs = await separateFromFile(id, nameWithUnsavedChanges) ?? keptAs
+    }
     // an imported score is saved as a new MuseScore file (NotationProject::doImport: m_isNewlyCreated)
     const id = await opened({ name, newlyCreated: !isMuseScoreFile(name), handle }, async () => addScore(
-        { name, source, url, hash: await contentHash(data), size: data.byteLength, handle, ...entryInfo(s) },
+        { name, source, url, hash, size: data.byteLength, handle, ...entryInfo(s) },
         { data },
     ))
     if (id) {
-        // the file opened from the computer replaces unsaved changes of the same score
-        await removeAutosave(id)
+        // an autosave older than the file's saved version is not restored by anything (see openStored)
+        if (!elsewhere.has(id)) {
+            await removeAutosave(id)
+        }
         void makeThumbnail(s).then(thumbnail => updateScore(id, { thumbnail }))
+    }
+    if (keptAs) {
+        setStatus(arg(webtr('Your unsaved changes to this score were kept as a separate score: %1'), baseName(keptAs)))
     }
 }
 
@@ -409,6 +479,9 @@ export async function openStored(id: string): Promise<boolean> {
     const stored = await loadScoreContent(id)
     if (!stored) {
         return false
+    }
+    if (!(await confirmOpenedElsewhere([id]))) {
+        return true
     }
     if (!(await closeOpenedScore())) {
         return true
@@ -450,6 +523,11 @@ export async function createNewScore(options: NewScoreOptions): Promise<void> {
     // a new score is unsaved (NotationProject::markAsNewlyCreated)
     const s = await load(name, () => unsaved(createScore(options)))
     if (!s) {
+        return
+    }
+    if (!(await ensureRoomForScore())) {
+        clearScore()
+        setStatus('')
         return
     }
     const id = await opened({ name, newlyCreated: true }, () => addScore({ name, source: 'new', size: 0, ...entryInfo(s) }, { options }))
@@ -525,6 +603,9 @@ export async function saveScore(): Promise<boolean> {
     const info = { size: data.byteLength, hash: await contentHash(data), ...entryInfo(s) }
     let id = current.id
     if (!id || !(await saveScoreContent(id, data, info))) {
+        if (!(await ensureRoomForScore())) {
+            return false
+        }
         id = await addScore({ name: current.name, source: 'file', handle: current.handle, ...info }, { data }, true)
         if (!id) {
             setStatus(`Could not save ${current.name}: the browser does not store data for this page`, true)
@@ -584,8 +665,12 @@ async function saveAs(name: string, toComputer: boolean): Promise<boolean> {
             id = current.id
         }
     }
-    if (!id) {
+    const room = id !== null || await ensureRoomForScore()
+    if (!id && room) {
         id = await addScore({ name: fileName, source: current.newlyCreated ? 'new' : 'file', handle, ...info }, { data }, true)
+    }
+    if (!room && !toComputer) {
+        return false
     }
     if (!id) {
         if (!toComputer) {
@@ -716,23 +801,70 @@ window.addEventListener('beforeunload', (e) => {
 })
 
 // ---------------------------------------------------------------------------------
+//   the score in other tabs (not in MuseScore)
+// ---------------------------------------------------------------------------------
+
+const TABS_DO_NOT_SHARE = (): string => webtr('The tabs do not share their changes: whichever tab saves last overwrites what the other tab saved. To avoid losing work, continue in one tab only and close the score in the other.')
+
+/** the score the user knows to be open in another tab: asked or told once, until it is not open there any more */
+let s_warnedOpenElsewhere: string | null = null
+
+/** entering a score (this tab or the Score page) that was opened in another tab meanwhile: explains the situation */
+async function warnIfOpenElsewhere(): Promise<void> {
+    const id = state.current?.id
+    if (!id || state.view !== 'score') {
+        return
+    }
+    if (!(await scoresOpenElsewhere()).has(id)) {
+        if (s_warnedOpenElsewhere === id) {
+            s_warnedOpenElsewhere = null
+        }
+        return
+    }
+    if (s_warnedOpenElsewhere !== id && state.current?.id === id && !state.dialog) {
+        s_warnedOpenElsewhere = id
+        await showMessage(webtr('This score is also open in another tab.'), TABS_DO_NOT_SHARE())
+    }
+}
+
+let s_lastView = state.view
+onSessionChanged(() => {
+    holdOpenScore(state.current?.id ?? null)
+    if (state.view !== s_lastView) {
+        s_lastView = state.view
+        void warnIfOpenElsewhere()
+    }
+})
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        void warnIfOpenElsewhere()
+    }
+})
+window.addEventListener('focus', () => void warnIfOpenElsewhere())
+
+// ---------------------------------------------------------------------------------
 //   startup: ?url=<score url>, otherwise the score that was open
 // ---------------------------------------------------------------------------------
 
 /**
  * StartupScenario::restoreLastSession: autosaves are left over if the page was closed with unsaved changes (or the
- * browser quit); "Yes" opens the score with its autosave (returns its id), "No" removes the autosaves.
+ * browser quit). The question is about one score: "Yes" opens it with its autosave (returns its id), "No" or Escape
+ * removes its autosave (MuseScore: all of them). The autosaves of other scores stay: they are restored when these
+ * scores are opened and asked about at the next start. Autosaves of scores open in other tabs are not left over.
  */
 async function restoreSessionIfNeeded(): Promise<string | null> {
-    const ids = await autosaveIds()
+    const elsewhere = await scoresOpenElsewhere()
+    const ids = (await autosaveIds()).filter(id => !elsewhere.has(id))
     if (!ids.length) {
         return null
     }
-    if (await ask<boolean>('restoreSession')) {
-        const open = openScoreId()
-        return open && ids.includes(open) ? open : ids[0]
+    const open = openScoreId()
+    const id = open && ids.includes(open) ? open : ids[0]
+    const name = await scoreName(id)
+    if (await ask<boolean>('restoreSession', { restoreName: name ? baseName(name) : '' })) {
+        return id
     }
-    await removeAllAutosaves()
+    await removeAutosave(id)
     return null
 }
 

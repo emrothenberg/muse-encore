@@ -102,7 +102,7 @@ packages/viewer/        the npm package "muse-encore-viewer" (package.json, READ
                         tools/build-viewer-package.ts with viewer/vite.lib.config.ts: one bundled ES module for CDNs)
 shared/                 code of both apps: playback/ (Synthesizer interface, SpessaSynth + MS Basic.sf3 loaded on first use and
                         cached, player.ts scheduler), vite-plugin-sound.ts (serves/copies the soundfont), notedetection/
-                        (NoteDetector interface: microphone -> notes; basicpitch/ = Spotify's basic-pitch, Apache-2.0,
+                        (NoteDetector interface: microphone -> notes; microphone.ts opens, closes or keeps the microphone; basicpitch/ = Spotify's basic-pitch, Apache-2.0,
                         vendored with its TensorFlow.js model, loaded on demand, running in a Web Worker (worker.ts;
                         the audio worklet sends the audio to it; levelgate.ts drops too quiet notes, overtonefilter.ts the overtones of low notes); calibration.ts (the values measured with
                         the calibration sheet); replaceable in
@@ -114,7 +114,7 @@ editor/                 MuseEncore (the editor), Vite score editor app: React UI
                         strings without context are translated in locales/webstrings.json, webtr()), score view
                         (scoreview.ts, DOM code from the viewer; drops of palette cells), dragcontroller.ts (the data of
                         the current drag), session.ts (open/create/save scores; the migration dialog
-                        dialogs/MigrationDialog.tsx), db.ts (IndexedDB via
+                        dialogs/MigrationDialog.tsx), tabs.ts (scores open in other tabs: Web Locks), db.ts (IndexedDB via
                         Dexie), settings.ts (localStorage), playback/ (playbackcontroller.ts = playback actions on shared/playback,
                         playbackview.ts cursor/pan/loop markers; `?synth=none` = no sound), playalong/ (Playalong, not
                         in MuseScore: follower.ts = score following, playalongcontroller.ts, playalongview.ts; in note

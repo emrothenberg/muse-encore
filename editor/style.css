@@ -834,6 +834,10 @@ dialog.migration label.check { white-space: normal; }
     border-top: 1px solid var(--border);
 }
 dialog.confirm p { margin: 0; color: var(--muted); }
+.remove-score-list { max-height: 240px; overflow: auto; margin: 12px 0; border: 1px solid var(--border); border-radius: 4px; }
+.remove-score-list label { display: flex; align-items: center; gap: 8px; padding: 4px 8px; cursor: pointer; }
+.remove-score-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.remove-score-date { color: var(--muted); white-space: nowrap; }
 
 .dialog-buttons {
     display: flex;

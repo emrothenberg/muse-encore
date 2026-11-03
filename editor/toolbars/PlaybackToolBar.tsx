@@ -73,6 +73,7 @@ const SETTINGS_ITEMS: MenuItem[] = [
             { kind: 'action', code: 'playalong-calibrate' },
         ],
     },
+    { kind: 'action', code: 'playalong-keep-microphone' },
     { kind: 'separator' },
     { kind: 'action', code: 'loop-in' },
     { kind: 'action', code: 'loop-out' },

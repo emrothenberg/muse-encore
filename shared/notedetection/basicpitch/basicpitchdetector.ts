@@ -61,15 +61,24 @@ export class BasicPitchDetector implements NoteDetector {
             }
             w.addEventListener('message', this.listener)
         })
-        this.input = new AudioInput(() => {})
+        const input = new AudioInput(() => {}, this.options.keepMicrophone)
+        this.input = input
         try {
-            await this.input.start(this.options.input ?? 'microphone', channel.port1)
+            await input.start(this.options.input ?? 'microphone', channel.port1)
+            if (this.input !== input) {
+                throw new DOMException('stopped while starting', 'AbortError')
+            }
             const modelUrl = new URL(`${this.options.baseUrl}basic-pitch/model.json`, location.href).href
-            const msg: ToWorker = { type: 'start', modelUrl, sampleRate: this.input.sampleRate!, port: channel.port2, settings: this.m_settings }
+            const msg: ToWorker = { type: 'start', modelUrl, sampleRate: input.sampleRate!, port: channel.port2, settings: this.m_settings }
             w.postMessage(msg, [channel.port2])
             await ready
         } catch (e) {
-            await this.stop()
+            // the microphone is not kept for a start that failed
+            await input.stop(true)
+            // stopped meanwhile: this.input may already be the input of a newer start
+            if (this.input === input) {
+                await this.stop()
+            }
             throw e
         }
     }

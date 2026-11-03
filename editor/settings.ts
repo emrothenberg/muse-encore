@@ -95,6 +95,8 @@ export interface PlaybackSettings {
     playalongOvertoneFilter: OvertoneFilterLevel
     /** the values measured by "Calibrate the note detection…" (null: not calibrated) */
     playalongCalibration: DetectionCalibration | null
+    /** "Keep microphone active during session" (not in MuseScore; see shared/notedetection/microphone.ts) */
+    playalongKeepMicrophone: boolean
     /** PlaybackConfiguration::playNotesWhenEditing ("Hear playback when adding, editing, and selecting notes") */
     playNotesWhenEditing: boolean
     /** playChordWhenEditing */
@@ -157,7 +159,7 @@ const DEFAULTS: AppSettings = {
     panels: { open: ['palettesPanel', 'instrumentsPanel', 'inspectorPanel'], current: 'palettesPanel', width: 300, collapsed: false },
     palettes: null,
     playback: {
-        muted: false, metronome: false, countIn: false, pan: true, smoothPan: false, playRepeats: true, playChordSymbols: true, playalongPractice: false, playalongOvertoneFilter: 'normal', playalongCalibration: null,
+        muted: false, metronome: false, countIn: false, pan: true, smoothPan: false, playRepeats: true, playChordSymbols: true, playalongPractice: false, playalongOvertoneFilter: 'normal', playalongCalibration: null, playalongKeepMicrophone: false,
         playNotesWhenEditing: true, playChordWhenEditing: true, playHarmonyWhenEditing: true,
         playPreviewNotesInInputByDuration: true, playPreviewNotesWithScoreDynamics: true, notePlayDuration: 500,
     },
@@ -256,7 +258,7 @@ function sanitizePlayback(p: Partial<PlaybackSettings>): PlaybackSettings {
     const b = (k: keyof PlaybackSettings): boolean => typeof p[k] === 'boolean' ? p[k] as boolean : d[k] as boolean
     return {
         muted: b('muted'), metronome: b('metronome'), countIn: b('countIn'), pan: b('pan'), smoothPan: b('smoothPan'), playRepeats: b('playRepeats'),
-        playChordSymbols: b('playChordSymbols'), playalongPractice: b('playalongPractice'), playNotesWhenEditing: b('playNotesWhenEditing'),
+        playChordSymbols: b('playChordSymbols'), playalongPractice: b('playalongPractice'), playalongKeepMicrophone: b('playalongKeepMicrophone'), playNotesWhenEditing: b('playNotesWhenEditing'),
         playChordWhenEditing: b('playChordWhenEditing'), playHarmonyWhenEditing: b('playHarmonyWhenEditing'),
         playPreviewNotesInInputByDuration: b('playPreviewNotesInInputByDuration'),
         playPreviewNotesWithScoreDynamics: b('playPreviewNotesWithScoreDynamics'),
