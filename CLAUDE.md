@@ -100,7 +100,7 @@ viewer/                 MuseEncore Viewer: src/museencoreviewer.ts is the viewer
                         src/index.ts the npm package's entry (applyMuseEncoreViewer), embed.html a dev page of the package API
 packages/viewer/        the npm package "muse-encore-viewer" (package.json, README; dist/ + fonts/ are built by
                         tools/build-viewer-package.ts with viewer/vite.lib.config.ts: one bundled ES module for CDNs)
-shared/                 code of both apps: playback/ (Synthesizer interface, SpessaSynth + MS Basic.sf3 loaded on first use and
+shared/                 code of both apps: icons.ts (SVG icons), playback/ (Synthesizer interface, SpessaSynth + MS Basic.sf3 loaded on first use and
                         cached, player.ts scheduler), vite-plugin-sound.ts (serves/copies the soundfont), notedetection/
                         (NoteDetector interface: microphone -> notes; microphone.ts opens, closes or keeps the microphone; basicpitch/ = Spotify's basic-pitch, Apache-2.0,
                         vendored with its TensorFlow.js model, loaded on demand, running in a Web Worker (worker.ts;
@@ -146,6 +146,9 @@ methods keep their C++ names, so changes in MuseScore can be followed file by fi
   see share/locale/*.ts), so MuseScore's translations apply; commands are MuseScore's actions (codes, titles, icons,
   shortcuts from the generated table) registered with `registerAction`. Strings MuseScore does not have are
   translated in editor/locales/webstrings.json (all of MuseScore's languages; `webtr()`, `[null, text]` titles).
+- The same command has the same icon in the editor and the viewer: when an icon changes, change it in both. Both use
+  MuseScore's icon codes (the viewer's `ICON` table, the editor's actions); SVG icons (for what MuseScore's icon font does
+  not have) are defined once in `shared/icons.ts`.
 - TypeScript 7 (native compiler); `npm run typecheck` / `npm run build` use it.
 - C++ destructors with side effects must be emulated explicitly (e.g. ~LayoutContext -> end of ScoreLayout.layoutRange).
 - DOM -> rendering calls (C++ `renderer()->...`) go through hooks set in `rendering/score/scorerenderer.ts`.

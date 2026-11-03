@@ -11,6 +11,7 @@ import {
     drawContinuousPanel, drawPage, drawPageSvg, initEngravingFonts, isTwoSided, layoutScore, onImageDecoded, openFileAccept, openScoreFile, scoreBaseName, pageCount,
     pageSize, playbackCursorBounds, scoreTitle, setViewMode as setScoreViewMode, SvgGlyphDefs, withPageView, type MasterScore,
 } from '../../src/index'
+import { CENTER_ICON } from '../../shared/icons'
 import { SOUNDFONT_CDN_URL } from '../../shared/playback/soundfont'
 import { ViewerPlayback, type ViewerPlaybackState } from './playback'
 import type {
@@ -97,7 +98,7 @@ const DEFAULT_GROUPS: Required<MuseEncoreViewerToolbarGroups> = {
 // MuseScore's icon codes (src/framework/ui/view/iconcodes.h)
 const ICON = {
     open: '&#xEF23;', close: '&#xEF14;', prev: '&#xF39C;', next: '&#xF39B;', pagesH: '&#xEF1C;', pagesV: '&#xF3AF;',
-    twoPages: '&#xEF7F;', zoomOut: '&#xEF16;', zoomIn: '&#xEF18;', center: '&#xF48C;', print: '&#xF3B7;', fullscreen: '&#xEF15;',
+    twoPages: '&#xEF7F;', zoomOut: '&#xEF16;', zoomIn: '&#xEF18;', center: `<svg width="1em" height="1em" viewBox="${CENTER_ICON.viewBox}" aria-hidden="true" style="display:block"><path fill="currentColor" d="${CENTER_ICON.path}"/></svg>`, print: '&#xF3B7;', fullscreen: '&#xEF15;',
     play: '', pause: '', rewind: '&#xEF26;',
 }
 

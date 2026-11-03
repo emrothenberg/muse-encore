@@ -1792,3 +1792,4 @@
   the page; new SVG icon carbon:center-to-fit (SVG_ICONS in ToolBars.tsx). The viewer keeps "Center page" (it has no selection).
   The new strings' translations are unreviewed machine translations.
 - Viewer package: option `colorScheme` ('auto' = the browser's, also for any other value; 'light', 'dark') replaces `theme`, which is removed (breaking for embeds using it). The examples with options use colorScheme: 'light'.
+- Viewer: the center button ("Center page") has the editor's icon carbon:center-to-fit, defined once in shared/icons.ts. Compared the viewer's other icons with the editor's: all equal.
