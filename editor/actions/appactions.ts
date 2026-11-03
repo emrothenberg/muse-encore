@@ -8,7 +8,7 @@ import { removeAllScores } from '../db'
 import { ICON_CODES } from './uiactiondata'
 import type { ViewMode } from '../../src/index'
 import {
-    centerPage, centerSelectionOrPage, goToPage, lastPage, onScoreViewChanged, print, scoreViewState, setFitMode, setOrientation,
+    centerPage, centerSelectionOrFirstMeasure, goToPage, lastPage, onScoreViewChanged, print, scoreViewState, setFitMode, setOrientation,
     setViewMode, showShortcutsHelp, stepPage, toggleFullscreen, toggleSpread, zoomAt, zoomStep,
 } from '../scoreview'
 import {
@@ -181,8 +181,9 @@ export function registerAppActions(): void {
     registerAction('view-two-pages', {
         run: toggleSpread, enabled: () => pageViewShown() && scoreViewState().spreadAvailable, checked: () => scoreViewState().spread,
     }, { title: [null, 'Two pages'], description: [null, 'Two pages (for scores with a two-sided page layout)'], icon: 0xEF7F, checkable: true })
-    registerAction('view-center-page', { run: centerSelectionOrPage, enabled: scoreShown },
-        { title: [null, 'Center page'], description: [null, 'Center the page, or the selected measures'], icon: 0xF48C })
+    // the icon is an SVG (ToolBars.tsx)
+    registerAction('view-center-page', { run: centerSelectionOrFirstMeasure, enabled: scoreShown },
+        { title: [null, 'Center measure'], description: [null, 'Center the selected measure, or the first measure'] })
     registerAction('view-shortcuts-help', { run: showShortcutsHelp }, { title: [null, '?'], description: [null, 'Keyboard shortcuts'] })
 
     // ---- playback (PlaybackController) ----

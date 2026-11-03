@@ -34,7 +34,8 @@ these tests run for the viewer and the editor. Covers:
   reloading immediately; the editor then shows its home screen)
 - pages side by side / vertical; two-page spreads only for two-sided layouts ([1], [2, 3], …), spread navigation
 - MuseScore shortcuts (Ctrl +/-/0, Home/End, Ctrl+PgDn), Ctrl+wheel zoom at the pointer
-- space + drag beyond the pages (a 48 px strip stays visible), "Center page"
+- space + drag beyond the pages (a 48 px strip stays visible), "Center page" (viewer) / "Center measure" (editor:
+  the selection or the first measure)
 - high zoom: tiles of the visible part at full resolution, at most 16 Mpx
 - full screen: toolbar collapsed, shown at the top edge
 - printing: vector pages (no bitmaps) on sheets of the score's page size (portrait and landscape), page count
