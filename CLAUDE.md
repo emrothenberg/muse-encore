@@ -189,8 +189,8 @@ methods keep their C++ names, so changes in MuseScore can be followed file by fi
   compare-out/musicxml/ref)
 - `npm run compare:mscx` - diff writeMscx/saveMscz output (main .mscx, style, parts) against MuseScore's own re-save
   (`mscore -o out.mscx`, cached in compare-out/mscx/ref); EIDs are normalized
-- `npm run bump-version [-- <version> [<viewer version> | -]]` - set the version of package.json and optionally of the
-  viewer package (asks, suggesting the next patch versions), commit "Bumps version to x.y.z" and tag vx.y.z (no push,
+- `npm run bump-version [-- <version>]` - set the version of package.json and of the viewer package, which always have
+  the same version (asks, suggesting the next patch version), commit "Bumps version to x.y.z" and tag vx.y.z (no push,
   no npm publish)
 - `npx tsx tools/gen/<gen-*.ts> MuseScore` - regenerate tables from the reference sources (symids, styledef,
   property, typesconv, noteheads, accidentals, textstyle, drumset, instrumenttemplates, scoreorders, soundmapping, harmonytodiagram [-> fonts], uiactions [-> editor/actions])

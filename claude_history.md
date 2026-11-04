@@ -1824,3 +1824,4 @@
   The merged method button of the toolbar (port only) shows the default mode outside of note input.
 - Known limits: NoteInputCursor's TAB string marks are still missing; the ruler was only checked against the C++ source
   and in the port's editor (mscore's command line does not render note input).
+- tools/bump-version.ts: MuseEncore and muse-encore-viewer always get the same version (one version argument; the viewer's argument, its question and `-` are removed).
