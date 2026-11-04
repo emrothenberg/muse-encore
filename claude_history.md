@@ -1810,3 +1810,17 @@
 - Deliberate differences from C++: nothing happens behind an open dialog or during the playalong; assigning a mapping does not also enter notes; "MIDI remote control" off really disables the mappings (C++ only disables the list).
 - Not ported: MIDI output and "Produce MIDI 2.0 output" (the sound goes to the browser's synthesizer; only MIDI 1.0 input), MMC (needs the sysex permission), multi-selection and the Reset of the mappings page.
 - Tests: test/midiinput.test.ts (fake device), editor.e2e.ts "MIDI input" (fake API in the browser). Checked once in real headless Chrome with a virtual CoreMIDI source (Swift script: notes, chords, note on with velocity 0, preferences, assigning a mapping, playback by a mapped key). Not checked with a physical device, in Firefox or with audible sound. The two new strings' translations are unreviewed machine translations.
+
+## 2026-11-04 — Input by duration: ruler and preview
+
+- The mode's logic was already ported (note-input-by-duration, padNote, setInputNote, moveInputNotes, MIDI). New:
+  notationscene/notationruler.ts (C++ NotationRuler, the cursor above the staff) and NotationInteraction
+  previewNotes/shouldDrawInputPreview/drawInputPreview (the notes of the next input, painted in drawSelectionRange of
+  index.ts; never printed).
+- Preference "Input by duration mode cursor" (Above staff/On staff).
+- Also "Default input mode" and "Apply accidentals, augmentation dots, and articulations": the whole NoteInputSection.qml.
+  notation/internal/notationconfiguration.ts holds the three preferences; the editor sets them from settings.noteInput.
+  The merged method button of the toolbar (port only) shows the default mode outside of note input.
+- Known limits: NoteInputCursor's TAB string marks are still missing; the ruler was only checked against the C++ source
+  and in the port's editor (mscore's command line does not render note input).
+

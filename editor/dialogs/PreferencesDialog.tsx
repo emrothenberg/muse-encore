@@ -137,10 +137,10 @@ function MidiInputSection(): React.JSX.Element {
     )
 }
 
-/** NoteInputPreferencesPage.qml: MidiInputSection, NotePreviewSection */
+/** NoteInputPreferencesPage.qml: NoteInputSection, MidiInputSection, NotePreviewSection */
 function NoteInputPage(): React.JSX.Element {
     useLanguage()
-    const { playback, midi } = useSettings()
+    const { playback, midi, noteInput } = useSettings()
     const play = playback.playNotesWhenEditing
     const midiBoxEnabled = isMidiInputOn() && play
     const check = (key: 'playChordWhenEditing' | 'playHarmonyWhenEditing' | 'playPreviewNotesInInputByDuration' | 'playPreviewNotesWithScoreDynamics',
@@ -153,6 +153,35 @@ function NoteInputPage(): React.JSX.Element {
     )
     return (
         <>
+        <section className="preferences-section note-input" aria-labelledby="pref-note-input">
+            <h3 id="pref-note-input">{qtrc('preferences', 'Note input')}</h3>
+            <div className="autosave-row">
+                <span>{qtrc('preferences', 'Default input mode')}</span>
+                <select aria-label={qtrc('preferences', 'Default input mode')} value={noteInput.defaultMethod}
+                    onChange={e => updateSettings('noteInput', { defaultMethod: e.target.value as typeof noteInput.defaultMethod })}>
+                    <option value="note-input-by-note-name">{actionTitle('note-input-by-note-name')}</option>
+                    <option value="note-input-by-duration">{actionTitle('note-input-by-duration')}</option>
+                </select>
+            </div>
+            <div className="autosave-row">
+                <span>{qtrc('preferences', 'Apply accidentals, augmentation dots, and articulations')}</span>
+                <select aria-label={qtrc('preferences', 'Apply accidentals, augmentation dots, and articulations')}
+                    value={noteInput.addAccidentalDotsArticulationsToNextNoteEntered ? '0' : '1'}
+                    onChange={e => updateSettings('noteInput', { addAccidentalDotsArticulationsToNextNoteEntered: e.target.value === '0' })}>
+                    <option value="0">{qtrc('preferences', 'To next note entered')}</option>
+                    <option value="1">{qtrc('preferences', 'To previous note entered')}</option>
+                </select>
+            </div>
+            <div className="autosave-row">
+                <span>{qtrc('preferences', 'Input by duration mode cursor')}</span>
+                <select aria-label={qtrc('preferences', 'Input by duration mode cursor')}
+                    value={noteInput.useNoteInputCursorInInputByDuration ? '1' : '0'}
+                    onChange={e => updateSettings('noteInput', { useNoteInputCursorInInputByDuration: e.target.value === '1' })}>
+                    <option value="0">{qtrc('preferences', 'Above staff')}</option>
+                    <option value="1">{qtrc('preferences', 'On staff')}</option>
+                </select>
+            </div>
+        </section>
         <MidiInputSection />
         <section className="preferences-section" aria-labelledby="pref-note-preview">
             <h3 id="pref-note-preview">{qtrc('preferences', 'Note preview')}</h3>

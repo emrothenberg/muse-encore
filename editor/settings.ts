@@ -47,6 +47,15 @@ export interface AppSettings {
     }
     /** the items of the note input toolbar (MuseScore's ToolConfig "noteInput"); null = the default */
     noteInputBar: { action: string; show: boolean }[] | null
+    /** NotationConfiguration: the Note input section of the preferences */
+    noteInput: {
+        /** defaultNoteInputMethod ("Default input mode"): the code of its action */
+        defaultMethod: 'note-input-by-note-name' | 'note-input-by-duration'
+        /** addAccidentalDotsArticulationsToNextNoteEntered ("Apply accidentals, ...": true = to next note entered) */
+        addAccidentalDotsArticulationsToNextNoteEntered: boolean
+        /** useNoteInputCursorInInputByDuration ("Input by duration mode cursor": false = above staff, true = on staff) */
+        useNoteInputCursorInInputByDuration: boolean
+    }
     /** the panels left of the score (panels/panels.ts checks the ids): the open ones, the current tab, the width, collapsed */
     panels: {
         open: string[]
@@ -183,6 +192,7 @@ const DEFAULTS: AppSettings = {
     ui: { language: 'system', metricUnit: false },
     layout: { docks: {}, hidden: [], statusBar: true },
     noteInputBar: null,
+    noteInput: { defaultMethod: 'note-input-by-note-name', addAccidentalDotsArticulationsToNextNoteEntered: true, useNoteInputCursorInInputByDuration: false },
     panels: { open: ['palettesPanel', 'instrumentsPanel', 'inspectorPanel'], current: 'palettesPanel', width: 300, collapsed: false },
     palettes: null,
     playback: {
@@ -241,6 +251,11 @@ function sanitize(s: Partial<{ [K in keyof AppSettings]: Partial<AppSettings[K]>
         noteInputBar: Array.isArray(s.noteInputBar)
             && s.noteInputBar.every(i => typeof i?.action === 'string' && typeof i?.show === 'boolean')
             ? s.noteInputBar as AppSettings['noteInputBar'] : null,
+        noteInput: {
+            defaultMethod: s.noteInput?.defaultMethod === 'note-input-by-duration' ? 'note-input-by-duration' : 'note-input-by-note-name',
+            addAccidentalDotsArticulationsToNextNoteEntered: s.noteInput?.addAccidentalDotsArticulationsToNextNoteEntered !== false,
+            useNoteInputCursorInInputByDuration: s.noteInput?.useNoteInputCursorInInputByDuration === true,
+        },
         panels: {
             open: isStringArray(s.panels?.open) ? s.panels.open : DEFAULTS.panels.open,
             current: typeof s.panels?.current === 'string' ? s.panels.current : DEFAULTS.panels.current,

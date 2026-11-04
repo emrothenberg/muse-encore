@@ -1157,7 +1157,7 @@ dialog.preferences .dialog-buttons { margin: 0; padding: 12px 24px; border-top: 
 .preferences-page { flex: 1; padding: 16px 24px; overflow: auto; }
 .preferences-section h3 { margin: 0 0 8px; font-size: 13px; }
 .preferences-section select { min-width: 240px; }
-.preferences-section.midi-devices { margin-bottom: 20px; }
+.preferences-section.midi-devices, .preferences-section.note-input { margin-bottom: 20px; }
 .preferences-expandable summary { cursor: pointer; margin: 4px 0; }
 .preferences-expandable[open] { display: flex; flex-direction: column; gap: 4px; }
 .midi-access-hint { margin: 4px 0; white-space: normal; }

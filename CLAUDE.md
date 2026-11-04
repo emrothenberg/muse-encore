@@ -80,7 +80,7 @@ src/
   playalong             api.ts: the measures in the played order with their pitches, their rectangles (the editor's
                         Playalong, not in MuseScore)
   notationscene         NotationViewInputController (clicks, keys), NotationActionController (action codes -> commands),
-                        PlaybackCursor, LoopMarker, ContinuousPanel (left edge of the horizontal continuous view),
+                        PlaybackCursor, NotationRuler (the cursor above the staff of the input by duration mode), LoopMarker, ContinuousPanel (left edge of the horizontal continuous view),
                         NotationContextMenuModel (the score's context menu), EditStaff/EditStaffType (the logic of the
                         Staff/Part properties and Edit staff type dialogs; the app's dialogs show them), SelectDialog/
                         SelectNoteDialog ("Select > More…"; NotationElements filters the elements)

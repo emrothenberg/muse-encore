@@ -14,6 +14,7 @@
  * insert-measures, staff-properties, ...) are registered by the app.
  */
 
+import { NotationConfiguration } from '../notation/internal/notationconfiguration'
 import type { Harmony } from '../engraving/dom/harmony'
 import { playbackController } from '../playback/iplaybackcontroller'
 import { DurationType, StaffGroup, VoiceAssignment, type voice_idx_t } from '../engraving/types/types'
@@ -178,8 +179,6 @@ export class NotationActionController {
     private m_interaction: NotationInteraction
     private m_actions = new Map<string, ActionEntry>()
 
-    /** C++ NotationConfiguration::defaultNoteInputMethod() */
-    defaultNoteInputMethod = NoteEntryMethod.BY_NOTE_NAME
     /** C++ NotationConfiguration::isPlayPreviewNotesInInputByDuration() */
     isPlayPreviewNotesInInputByDuration = true
 
@@ -454,7 +453,7 @@ export class NotationActionController {
         }
 
         // If the Braille panel or Note Input toolbar has focus, stay there.
-        noteInput.startNoteInput(this.defaultNoteInputMethod, /*focusNotation*/ false)
+        noteInput.startNoteInput(NotationConfiguration.defaultNoteInputMethod(), /*focusNotation*/ false)
     }
 
     private toggleNoteInputMethod(method: NoteEntryMethod): void {
@@ -552,7 +551,7 @@ export class NotationActionController {
         }
 
         if (pad >= Pad.DOT && pad <= Pad.DOT4) {
-            if (!noteInput.isNoteInputMode() || !noteInput.addAccidentalDotsArticulationsToNextNoteEntered) {
+            if (!noteInput.isNoteInputMode() || !NotationConfiguration.addAccidentalDotsArticulationsToNextNoteEntered()) {
                 interaction.toggleDotsForSelection(pad)
                 return
             }
@@ -578,7 +577,7 @@ export class NotationActionController {
             this.startNoteInput()
         }
 
-        if (noteInput.isNoteInputMode() && noteInput.addAccidentalDotsArticulationsToNextNoteEntered) {
+        if (noteInput.isNoteInputMode() && NotationConfiguration.addAccidentalDotsArticulationsToNextNoteEntered()) {
             noteInput.setAccidental(type)
         } else {
             interaction.toggleAccidentalForSelection(type)
@@ -780,7 +779,7 @@ export class NotationActionController {
     }
 
     private startNoteInput(): void {
-        this.noteInput().startNoteInput(this.defaultNoteInputMethod)
+        this.noteInput().startNoteInput(NotationConfiguration.defaultNoteInputMethod())
     }
 
     isNoteInputMode(): boolean { return this.noteInput().isNoteInputMode() }
@@ -1469,7 +1468,7 @@ export class NotationActionController {
             this.startNoteInput()
         }
 
-        if (noteInput.isNoteInputMode() && noteInput.addAccidentalDotsArticulationsToNextNoteEntered) {
+        if (noteInput.isNoteInputMode() && NotationConfiguration.addAccidentalDotsArticulationsToNextNoteEntered()) {
             noteInput.setArticulation(articulationSymbolId)
         } else {
             interaction.toggleArticulationForSelection(articulationSymbolId)

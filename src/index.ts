@@ -37,6 +37,8 @@ import { createNotationReadersRegister } from './importexport/readers'
 import { NotationReadError, type NotationReaderInteractive, type NotationReaderOptions } from './project/inotationreader'
 import { defaultMusicXmlImportSettings, musicXmlImportConfiguration, type MusicXmlImportSettings } from './importexport/musicxml/internal/musicxmlconfiguration'
 import { defaultMidiImportSettings, midiImportConfiguration, type MidiImportSettings } from './importexport/midi/internal/midiconfiguration'
+import { NotationRuler } from './notationscene/notationruler'
+import { NotationConfiguration } from './notation/internal/notationconfiguration'
 import { SelectDialog, SelectNoteDialog } from './notationscene/selectdialog'
 import { NoteSpellingType } from './engraving/types/types'
 import type { Harmony } from './engraving/dom/harmony'
@@ -147,6 +149,8 @@ export { NONE_DEVICE_ID, type MidiDevice, type MidiDeviceID } from './framework/
 export { WebMidiInPort, type MidiAccessState, type MidiNavigator } from './framework/midi/internal/platform/web/webmidiinport'
 export { ALL_MIDI_ACTIONS, MidiRemote, RemoteEventType, isValidRemoteEvent, noRemoteEvent, remoteEventFromMidiEvent, type MidiControlsMapping, type RemoteEvent } from './framework/midiremote/midiremote'
 export { setMidiInputConfiguration, type MidiInputConfiguration } from './notation/internal/notationmidiinput'
+export { NotationConfiguration } from './notation/internal/notationconfiguration'
+export { NoteEntryMethod } from './engraving/dom/input'
 export * from './playalong/api'
 export {
     setFallbackFontEngine, createCanvasFallbackFontEngine, type FallbackFontEngine, type FallbackFont,
@@ -566,7 +570,17 @@ function drawSelectionRange(score: Score, pageIdx: number, painter: Painter, sca
         notationState(score).interaction.drawSelectionRange(painter, scaling)
     }
     if (noteInputCursorPage(score) === pageIdx) {
-        drawNoteInputCursor(score, painter)
+        // C++ AbstractNotationPaintView::paint
+        const interaction = notationState(score).interaction
+        const noteInput = interaction.noteInput()
+        if (interaction.shouldDrawInputPreview()) {
+            interaction.drawInputPreview(painter, { isPrinting: false })
+        }
+        if (noteInput.usingNoteInputMethod(NoteEntryMethod.BY_DURATION) && !NotationConfiguration.useNoteInputCursorInInputByDuration()) {
+            NotationRuler.paint(painter, noteInput.state())
+        } else {
+            drawNoteInputCursor(score, painter)
+        }
     }
     drawEditMode(score, page, painter, scaling)
     painter.translate(pagePos)
