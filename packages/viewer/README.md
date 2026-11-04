@@ -11,6 +11,11 @@ engraving engine (reference version 4.7.5). Everything runs in the browser; no s
 > **MuseEncore is neither an official MuseScore project nor a fork of MuseScore.** It is an independent
 > port of MuseScore Studio's open source code and is not affiliated with or endorsed by MuseScore Limited or the
 > MuseScore project. "MuseScore" is used here only to name the original software this project is based on.
+>
+> **About the name:** "MuseEncore" combines two music terms, "muse" and "encore", which, to the author's understanding,
+> are not protected as general terms. Should you nevertheless have (legal) concerns about the name, please first reach
+> out to the author at [philipp.staender@gmail.com](mailto:philipp.staender@gmail.com), so that the project can be
+> renamed.
 
 ## Usage
 
