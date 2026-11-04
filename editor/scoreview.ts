@@ -21,10 +21,10 @@ import {
     // drag and drop of palette cells onto the score
     viewDragEnter, viewDragLeave, viewDragMove, viewDrop, type OutgoingElementDrag, type ViewDragEvent,
 } from '../src/index'
-import { drawShadowNote, hideShadowNote, rightClickAt, scoreBaseName, showShadowNote } from '../src/index'
+import { NotationConfiguration, NoteEntryMethod, drawShadowNote, hideShadowNote, rightClickAt, scoreBaseName, showShadowNote } from '../src/index'
 import { setShortcutOverride } from './actions/actions'
 import { ELEMENT_DROP_EVENT, dragData, setDragData, type ElementDropDetail } from './dragcontroller'
-import { settings as appSettings, updateSettings, type ViewSettings } from './settings'
+import { onSettingsChanged, settings as appSettings, updateSettings, type ViewSettings } from './settings'
 
 /** commands of the score view that the app handles */
 export const handlers = {
@@ -1498,6 +1498,19 @@ function repaintPages(): void {
         renderVisible()
     })
 }
+
+// the preferences of the note input section (NotationConfiguration); the cursor is repainted when it changes
+function applyNoteInputSettings(): void {
+    const s = appSettings().noteInput
+    NotationConfiguration.setDefaultNoteInputMethod(s.defaultMethod === 'note-input-by-duration' ? NoteEntryMethod.BY_DURATION : NoteEntryMethod.BY_NOTE_NAME)
+    NotationConfiguration.setAddAccidentalDotsArticulationsToNextNoteEntered(s.addAccidentalDotsArticulationsToNextNoteEntered)
+    if (s.useNoteInputCursorInInputByDuration !== NotationConfiguration.useNoteInputCursorInInputByDuration()) {
+        NotationConfiguration.setUseNoteInputCursorInInputByDuration(s.useNoteInputCursorInInputByDuration)
+        repaintPages()
+    }
+}
+applyNoteInputSettings()
+onSettingsChanged(applyNoteInputSettings)
 
 let dropActive = false
 

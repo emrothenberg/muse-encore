@@ -15,6 +15,7 @@
  * applications.
  */
 
+import { NotationConfiguration } from '../notation/internal/notationconfiguration'
 import { playbackController } from '../playback/iplaybackcontroller'
 import { nidx, type staff_idx_t } from '../engraving/types/types'
 import { SelectType } from '../engraving/dom/select'
@@ -869,7 +870,7 @@ export class NotationViewInputController {
         case ElementType.MEASURE:
             if (noModifier) {
                 // C++ dispatches "note-input" at the position
-                interaction.noteInput().startNoteInput(NoteEntryMethod.BY_NOTE_NAME)
+                interaction.noteInput().startNoteInput(NotationConfiguration.defaultNoteInputMethod())
             }
             break
         case ElementType.NOTE: {

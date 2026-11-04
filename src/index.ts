@@ -29,6 +29,7 @@ import { ScoreOrder } from './engraving/dom/scoreorder'
 import {
     TraitType, instrumentGenres as engravingInstrumentGenres, instrumentGroups, instrumentOrders, searchTemplate,
 } from './engraving/dom/instrtemplate'
+import type { MidiEvent } from './framework/midi/midievent'
 import { NotationProject, ProjectCreateOptions } from './project/internal/notationproject'
 import { Sid } from './engraving/style/styledef'
 import { fontProvider } from './engraving/infrastructure/engravingcontext'
@@ -37,6 +38,8 @@ import { createNotationReadersRegister } from './importexport/readers'
 import { NotationReadError, type NotationReaderInteractive, type NotationReaderOptions } from './project/inotationreader'
 import { defaultMusicXmlImportSettings, musicXmlImportConfiguration, type MusicXmlImportSettings } from './importexport/musicxml/internal/musicxmlconfiguration'
 import { defaultMidiImportSettings, midiImportConfiguration, type MidiImportSettings } from './importexport/midi/internal/midiconfiguration'
+import { NotationRuler } from './notationscene/notationruler'
+import { NotationConfiguration } from './notation/internal/notationconfiguration'
 import { SelectDialog, SelectNoteDialog } from './notationscene/selectdialog'
 import { NoteSpellingType } from './engraving/types/types'
 import type { Harmony } from './engraving/dom/harmony'
@@ -142,6 +145,13 @@ export * from './inspector/api'
 export * from './notationscene/styledialog/api'
 // playback: MIDI events, positions/times, playback cursor, loop markers
 export * from './playback/api'
+export { MidiEvent, Opcode } from './framework/midi/midievent'
+export { NONE_DEVICE_ID, type MidiDevice, type MidiDeviceID } from './framework/midi/miditypes'
+export { WebMidiInPort, type MidiAccessState, type MidiNavigator } from './framework/midi/internal/platform/web/webmidiinport'
+export { ALL_MIDI_ACTIONS, MidiRemote, RemoteEventType, isValidRemoteEvent, noRemoteEvent, remoteEventFromMidiEvent, type MidiControlsMapping, type RemoteEvent } from './framework/midiremote/midiremote'
+export { setMidiInputConfiguration, type MidiInputConfiguration } from './notation/internal/notationmidiinput'
+export { NotationConfiguration } from './notation/internal/notationconfiguration'
+export { NoteEntryMethod } from './engraving/dom/input'
 export * from './playalong/api'
 export {
     setFallbackFontEngine, createCanvasFallbackFontEngine, type FallbackFontEngine, type FallbackFont,
@@ -561,7 +571,17 @@ function drawSelectionRange(score: Score, pageIdx: number, painter: Painter, sca
         notationState(score).interaction.drawSelectionRange(painter, scaling)
     }
     if (noteInputCursorPage(score) === pageIdx) {
-        drawNoteInputCursor(score, painter)
+        // C++ AbstractNotationPaintView::paint
+        const interaction = notationState(score).interaction
+        const noteInput = interaction.noteInput()
+        if (interaction.shouldDrawInputPreview()) {
+            interaction.drawInputPreview(painter, { isPrinting: false })
+        }
+        if (noteInput.usingNoteInputMethod(NoteEntryMethod.BY_DURATION) && !NotationConfiguration.useNoteInputCursorInInputByDuration()) {
+            NotationRuler.paint(painter, noteInput.state())
+        } else {
+            drawNoteInputCursor(score, painter)
+        }
     }
     drawEditMode(score, page, painter, scaling)
     painter.translate(pagePos)
@@ -1191,9 +1211,16 @@ export function executeAction(score: Score, code: string): boolean {
 }
 
 /**
- * MIDI note input (NotationMidiInput, note-on events): enters pitches played together at the note input position (the
- * editor enters the notes detected from the microphone with it); true if the note input changed (a new chord, or
- * the pitches of the input by duration)
+ * the event of a MIDI device for the score (C++ notation->midiInput()->onMidiEventReceived): it enters notes, starts
+ * the note input or only sounds, depending on the state of the note input
+ */
+export function midiEventReceived(score: Score, event: MidiEvent): void {
+    notationState(score).actions.midiInput().onMidiEventReceived(event)
+}
+
+/**
+ * enters pitches played together at the note input position (the editor enters the notes detected from the
+ * microphone with it); true if the note input changed (a new chord, or the pitches of the input by duration)
  */
 export function enterMidiNotes(score: Score, pitches: readonly number[]): boolean {
     const actions = notationState(score).actions

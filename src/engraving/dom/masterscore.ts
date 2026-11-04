@@ -51,7 +51,19 @@ export class MidiMapping {
     channel(): number { return this.m_channel }
 }
 
+/** C++ MidiInputEvent */
+export interface MidiInputEvent {
+    pitch: number
+    chord: boolean
+    velocity: number
+}
+
 export class MasterScore extends Score {
+    /** C++ m_activeMidiPitches: MIDI keys currently being held down */
+    private m_activeMidiPitches: MidiInputEvent[] = []
+
+    override activeMidiPitches(): MidiInputEvent[] { return this.m_activeMidiPitches }
+
     private m_sigmap = new TimeSigMap()
     private m_tempomap = new TempoMap()
     private m_loopBoundaries: [Fraction, Fraction] = [new Fraction(0, 1), new Fraction(0, 1)] // 0 - LoopIn, 1 - LoopOut

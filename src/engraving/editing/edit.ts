@@ -8034,7 +8034,7 @@ Score.prototype.cloneVoice = function (this: Score, strack: track_idx_t, dtrack:
 
 
 // =====================================================================================================================
-//   noteVal, addMidiPitch (edit.cpp): the pitches of MIDI input (here: the notes detected from the microphone)
+//   noteVal, addMidiPitch, addTiedMidiPitch (edit.cpp): the pitches of MIDI input (also: the notes detected from the microphone)
 // =====================================================================================================================
 
 // (imports of this section; ES imports are hoisted)
@@ -8046,6 +8046,8 @@ declare module '../dom/score' {
         noteVal(pitch: number, staffIdx: number, allowTransposition: boolean): NoteVal
         /** adds a MIDI pitch at the input position (addFlag: to the chord) */
         addMidiPitch(pitch: number, addFlag: boolean, allowTransposition: boolean): Note | null
+        /** adds a MIDI pitch tied to the same pitch of the previous chord (a key still held at the real-time advance) */
+        addTiedMidiPitch(pitch: number, addFlag: boolean, prevChord: Chord | null, allowTransposition: boolean): Note | null
     }
 }
 
@@ -8094,4 +8096,23 @@ Score.prototype.noteVal = function (this: Score, pitch: number, staffIdx: number
 Score.prototype.addMidiPitch = function (this: Score, pitch: number, addFlag: boolean, allowTransposition: boolean): Note | null {
     const nval = this.noteVal(pitch, this.inputState().staffIdx(), allowTransposition)
     return this.addPitch(nval, addFlag)
+}
+
+Score.prototype.addTiedMidiPitch = function (this: Score, pitch: number, addFlag: boolean, prevChord: Chord | null, allowTransposition: boolean): Note | null {
+    const n = this.addMidiPitch(pitch, addFlag, allowTransposition)
+    if (prevChord && n) {
+        const nn = prevChord.findNote(n.pitch())
+        if (nn) {
+            const tie = Factory.createItem(ElementType.TIE, scoreDummy(this)) as unknown as Tie
+            tie.setStartNote(nn)
+            tie.setEndNote(n)
+            tie.setTick(tie.startNote()!.tick())
+            tie.setTick2(tie.endNote()!.tick())
+            tie.setTrack(n.track())
+            n.setTieBack(tie)
+            nn.setTieFor(tie)
+            this.undoAddElement(tie)
+        }
+    }
+    return n
 }

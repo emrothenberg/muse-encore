@@ -13,6 +13,7 @@ import {
 import { MenuPopup } from '../components/Menu'
 import { ViewModeControl } from '../components/ViewModeControl'
 import { qtrc, stripMnemonic, trString, useLanguage, webtr } from '../i18n'
+import { useSettings } from '../settings'
 import type { MenuItem } from '../menus/appmenu'
 import { ZOOM_LEVELS, setFitMode, useScoreView, zoomAt, type FitMode } from '../scoreview'
 import { PlaybackToolBar } from './PlaybackToolBar'
@@ -129,6 +130,7 @@ function addItems(): MenuItem[] {
 function NoteInputBar(): React.JSX.Element {
     useActions()
     const config = useNoteInputBarConfig()
+    const defaultMethod = useSettings().noteInput.defaultMethod
     const [customize, setCustomize] = useState(false)
     const cogRef = useRef<HTMLButtonElement>(null)
 
@@ -149,7 +151,8 @@ function NoteInputBar(): React.JSX.Element {
                 methodsShown = true
                 const methods = shown.filter(x => NOTE_INPUT_METHODS.includes(x.action)).map(x => x.action)
                 // the button shows the method in use (in note input mode) and lists the shown methods in its menu
-                const current = methods.find(code => isActionChecked(code)) ?? methods[0]
+                // (outside of it the default input mode: the button starts it)
+                const current = methods.find(code => isActionChecked(code)) ?? (methods.includes(defaultMethod) ? defaultMethod : methods[0])
                 out.push(<ActionButton key={i.action} code={current} menu={methods.length > 1 ? actionItems(methods) : undefined} />)
             }
             return

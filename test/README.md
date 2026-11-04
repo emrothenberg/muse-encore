@@ -20,6 +20,7 @@ Test scores come from the MuseScore submodule (`git submodule update --init`): t
   font (serif or sans-serif like the score font); none without a fallback engine (node).
 - `regressions.test.ts` — bugs found in real-world scores (e.g. Note.clone sharing the accidental).
 - `chordlist.test.ts`, `style.test.ts` — chord symbol descriptions, style reading.
+- `midiinput.test.ts` — MIDI input with a fake device: the browser's API, the MIDI mappings, note input of all kinds.
 
 ## Web viewer and editor (`npm run test:e2e`, `test/e2e/webapps.e2e.ts`)
 

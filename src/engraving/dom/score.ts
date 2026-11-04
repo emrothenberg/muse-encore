@@ -405,6 +405,7 @@ export class Score extends EngravingObject {
     // ---------------------------------------------------------------------------------
 
     undoStack(): UndoStack { return this.masterScore().undoStack() }
+    activeMidiPitches(): import('./masterscore').MidiInputEvent[] { return this.masterScore().activeMidiPitches() }
     cmdState(): CmdState { return this.masterScore().cmdState() }
 
     /** C++ Score::undo(UndoCommand*, EditData*): performs the command and records it in the active macro */

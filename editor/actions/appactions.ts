@@ -37,6 +37,7 @@ import { AddBoxesTarget, canAddCustomTuplet, hasSelection } from '../../src/inde
 import { currentScore } from '../scoreview'
 import { actionsChanged, isActionEnabled, registerAction, triggerAction } from './actions'
 import { registerNotationActions } from './notationactions'
+import { initMidiInput } from '../midi/midicontroller'
 import { playbackState, registerPlaybackActions } from '../playback/playbackcontroller'
 import { registerPlayalongActions } from '../playalong/playalongcontroller'
 import '../playback/playbackview'
@@ -188,6 +189,7 @@ export function registerAppActions(): void {
 
     // ---- playback (PlaybackController) ----
     registerPlaybackActions()
+    initMidiInput()
     registerPlayalongActions()
 
     // ---- help (ApplicationActionController) ----
