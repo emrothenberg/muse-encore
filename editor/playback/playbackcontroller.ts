@@ -10,9 +10,9 @@
  */
 import { useSyncExternalStore } from 'react'
 import {
-    BoundaryTick, CTRL_PROGRAM, LoopBoundaryType, ME_CONTROLLER, ME_NOTEON, ME_PITCHBEND, findAndSelectChordRest,
+    BoundaryTick, ControllerChangeType, CTRL_PROGRAM, INFINITE_DURATION, LoopBoundaryType, ME_CONTROLLER, ME_NOTEON, ME_PITCHBEND, findAndSelectChordRest,
     notationPlayback, rangeSelectionPartIds, selectionPlaybackInfo, setPlaybackController, type EngravingItem,
-    type IPlaybackController, type MasterScore, type Score, type MeasureBeat, type NoteVal, type PlayParams, type PlaybackChannel,
+    type ControllerChangeEvent, type IPlaybackController, type MasterScore, type Score, type MeasureBeat, type NoteVal, type PlayParams, type PlaybackChannel,
     type PlaybackMidiEvent, type Segment,
 } from '../../src/index'
 import { actionsChanged, registerAction } from '../actions/actions'
@@ -615,14 +615,21 @@ export { setTempoMultiplier, isPlayAllowed, ensureSynthLoaded }
 //   the notes heard while editing (PlaybackController::playElements / playNotes)
 // ---------------------------------------------------------------------------------
 
-/** plays notes now for a time (the preview); the sounds are loaded first if needed */
-function playPreview(notes: { channel: number; pitch: number; velocity: number; duration: number }[], flushSound: boolean): void {
+/**
+ * plays notes now for a time (the preview); the sounds are loaded first if needed. INFINITE_DURATION: the note on only,
+ * duration 0: the note off only. A MIDI event is no user gesture: until a gesture has started the audio output its
+ * notes are not played (they would all sound at that moment).
+ */
+function playPreview(notes: { channel: number; pitch: number; velocity: number; duration: number }[], flushSound: boolean, midiEvent = false): void {
     if (!notes.length) {
         return
     }
     resumeAudio()
     void ensureSynthLoaded().then((ok) => {
         if (!ok) {
+            return
+        }
+        if (midiEvent && !synth.isRunning()) {
             return
         }
         updateChannels()
@@ -637,11 +644,25 @@ function playPreview(notes: { channel: number; pitch: number; velocity: number; 
             }
         }
         for (const n of notes) {
-            synth.noteOn(n.channel, n.pitch, n.velocity, now)
-            synth.noteOff(n.channel, n.pitch, now + n.duration)
+            if (n.duration > 0) {
+                synth.noteOn(n.channel, n.pitch, n.velocity, now)
+            }
+            if (n.duration !== INFINITE_DURATION) {
+                synth.noteOff(n.channel, n.pitch, now + n.duration)
+            }
         }
     })
 }
+
+/** the notes of a MIDI device that was disconnected while its keys were held */
+export function stopHeldPreviewNotes(): void {
+    if (!isPlaying()) {
+        synth.stopAll(false)
+    }
+}
+
+const MODWHEEL_CONTROLLER = 1
+const SUSTAIN_PEDAL_CONTROLLER = 64
 
 const controller: IPlaybackController = {
     isPlaying,
@@ -651,7 +672,7 @@ const controller: IPlaybackController = {
 
     playElements(elements: readonly EngravingItem[], params: PlayParams = {}, isMidi = false): void {
         const playback = currentPlayback()
-        if (!playback || !pb().playNotesWhenEditing || isMidi) {
+        if (!playback || !pb().playNotesWhenEditing || (isMidi && !pb().playNotesOnMidiInput)) {
             return
         }
         const elementsForPlaying = elements.filter((e) => {
@@ -668,7 +689,7 @@ const controller: IPlaybackController = {
         })
         const duration = params.duration ?? pb().notePlayDuration / 1000
         playPreview(playback.triggerEventsForItems(elementsForPlaying, duration, pb().playPreviewNotesWithScoreDynamics),
-            params.flushSound ?? true)
+            params.flushSound ?? true, params.midiEvent)
     },
 
     playNotes(notes: readonly NoteVal[], staffIdx: number, segment: Segment, params: PlayParams = {}): void {
@@ -679,12 +700,26 @@ const controller: IPlaybackController = {
             return
         }
         const duration = params.duration ?? pb().notePlayDuration / 1000
-        playPreview(playback.previewNotesForNoteVals(notes, staffIdx, segment, duration), params.flushSound ?? true)
+        playPreview(playback.previewNotesForNoteVals(notes, staffIdx, segment, duration), params.flushSound ?? true, params.midiEvent)
     },
 
     playMetronome(tick: number): void {
         void tick
         playPreview([{ channel: s_metronomeChannel, pitch: 77, velocity: 80, duration: 0.1 }], false)
+    },
+
+    triggerControllers(list: readonly ControllerChangeEvent[], staffIdx: number, tick: number): void {
+        const channel = currentPlayback()?.channelOfStaff(staffIdx, tick) ?? -1
+        if (channel < 0 || !synth.isLoaded()) {
+            return
+        }
+        for (const cc of list) {
+            if (cc.type === ControllerChangeType.PitchBend) {
+                synth.pitchBend(channel, Math.round(cc.val * 16383))
+            } else {
+                synth.controller(channel, cc.type === ControllerChangeType.Modulation ? MODWHEEL_CONTROLLER : SUSTAIN_PEDAL_CONTROLLER, Math.round(cc.val * 127))
+            }
+        }
     },
 
     seekElement(element: EngravingItem | null): void {

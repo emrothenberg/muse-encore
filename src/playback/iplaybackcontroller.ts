@@ -13,10 +13,29 @@ import type { NoteVal } from '../engraving/dom/input'
 import type { Segment } from '../engraving/dom/segment'
 import type { MeasureBeat } from '../notation/internal/notationplayback'
 
+/** C++ mpe::INFINITE_DURATION: play the note on only (a duration of 0: the note off only) */
+export const INFINITE_DURATION = Infinity
+
 export interface PlayParams {
     /** seconds; undefined: NotationConfiguration::notePlayDurationMilliseconds */
     duration?: number
     flushSound?: boolean
+    /** caused by a MIDI event, which is no user gesture: the browser may not have started the sound output */
+    midiEvent?: boolean
+}
+
+/** C++ mpe::ControllerChangeEvent::Type */
+export enum ControllerChangeType {
+    Modulation,
+    SustainPedalOnOff,
+    PitchBend,
+}
+
+/** C++ mpe::ControllerChangeEvent */
+export interface ControllerChangeEvent {
+    type: ControllerChangeType
+    /** 0..1 */
+    val: number
 }
 
 export interface IPlaybackController {
@@ -28,6 +47,7 @@ export interface IPlaybackController {
     playElements(elements: readonly EngravingItem[], params?: PlayParams, isMidi?: boolean): void
     playNotes(notes: readonly NoteVal[], staffIdx: number, segment: Segment, params?: PlayParams): void
     playMetronome(tick: number): void
+    triggerControllers(list: readonly ControllerChangeEvent[], staffIdx: number, tick: number): void
     seekElement(element: EngravingItem | null, flushSound?: boolean): void
     seekBeat(measureIndex: number, beatIndex: number, flushSound?: boolean): void
 }

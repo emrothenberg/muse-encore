@@ -2565,4 +2565,266 @@ describe.skipIf(!CHROME || !hasSubmodule)('editor', () => {
             await context.close()
         }, 180000)
     })
+    describe('MIDI input', () => {
+        interface FakeMidi {
+            __midi: {
+                send(bytes: number[]): void
+                requests: number
+                setPermission(state: string): void
+            }
+            __sv: { currentScore(): {
+                inputState(): { noteEntryMode(): boolean }
+                firstMeasure(): MeasureLike
+                select(e: unknown): void
+            }; scoreChanged(scroll: boolean): void }
+            __museencorePlayback: { synth: { isRunning(): boolean; log: { type: string; a: number; b: number }[]; noteOnCount: number } }
+        }
+        interface MeasureLike {
+            first(): SegmentLike | null
+        }
+        interface SegmentLike {
+            next(): SegmentLike | null
+            element(track: number): { isChord?(): boolean; isRest?(): boolean; notes(): { pitch(): number }[] } | null
+        }
+
+        /** a fake browser API with one device; `permission`: the state the browser reports at the start, or 'none' for no API */
+        async function midiPage(permission: 'granted' | 'prompt' | 'none', url = `${AMAZING()}&synth=none`): Promise<{ page: Page; context: BrowserContext }> {
+            const context = await browser.newContext({ viewport: { width: 1280, height: 800 } })
+            await presetNoMigration(context)
+            await context.route(`${SCORE_HOST}**`, route => route.fulfill({
+                body: readFileSync(`${DEMOS}/Amazing_grace.mscz`), headers: { 'access-control-allow-origin': '*' },
+            }))
+            await context.addInitScript((permission: string) => {
+                if (permission === 'none') {
+                    delete (Navigator.prototype as unknown as { requestMIDIAccess?: unknown }).requestMIDIAccess
+                    return
+                }
+                let state = permission
+                const input = {
+                    id: 'fake', name: 'Fake Keyboard', state: 'connected', onmidimessage: null as ((e: unknown) => void) | null,
+                    open: async () => input, close: async () => input,
+                }
+                const midi = {
+                    requests: 0,
+                    setPermission: (s: string) => { state = s },
+                    send: (bytes: number[]) => input.onmidimessage?.({ data: new Uint8Array(bytes), timeStamp: 0 }),
+                }
+                ;(window as unknown as { __midi: unknown }).__midi = midi
+                navigator.requestMIDIAccess = async () => {
+                    midi.requests++
+                    if (state === 'denied') {
+                        throw new DOMException('denied', 'NotAllowedError')
+                    }
+                    state = 'granted'
+                    return { inputs: new Map([['fake', input]]), outputs: new Map(), onstatechange: null } as unknown as MIDIAccess
+                }
+                const query = navigator.permissions.query.bind(navigator.permissions)
+                navigator.permissions.query = async (d) => {
+                    if (d.name === 'midi') {
+                        return { state, addEventListener: () => {} } as unknown as PermissionStatus
+                    }
+                    return query(d)
+                }
+            }, permission)
+            const page = await context.newPage()
+            page.on('pageerror', e => { throw e })
+            page.on('dialog', d => void d.accept())
+            await page.goto(url)
+            await scoreShown(page)
+            await page.evaluate("import('/scoreview.ts').then((m) => { window.__sv = m })") // a string: not transformed by vitest
+            return { page, context }
+        }
+
+        const selectFirst = (page: Page): Promise<void> => page.evaluate(() => {
+            const sv = (window as unknown as FakeMidi).__sv
+            const score = sv.currentScore()
+            for (let s = score.firstMeasure().first(); s; s = s.next()) {
+                const e = s.element(0)
+                if (e?.isChord?.() || e?.isRest?.()) {
+                    score.select(e.isChord?.() ? e.notes()[0] : e)
+                    sv.scoreChanged(false)
+                    return
+                }
+            }
+        })
+        const send = (page: Page, ...bytes: number[][]): Promise<void> => page.evaluate((b) => {
+            for (const m of b) {
+                (window as unknown as FakeMidi).__midi.send(m)
+            }
+        }, bytes)
+        const noteEntry = (page: Page): Promise<boolean> => page.evaluate(() => (window as unknown as FakeMidi).__sv.currentScore().inputState().noteEntryMode())
+        const firstPitches = (page: Page): Promise<string[]> => page.evaluate(() => {
+            const res: string[] = []
+            for (let s = (window as unknown as FakeMidi).__sv.currentScore().firstMeasure().first(); s; s = s.next()) {
+                const e = s.element(0)
+                if (e?.isChord?.()) {
+                    res.push(e.notes().map(n => n.pitch()).join('+'))
+                } else if (e?.isRest?.()) {
+                    res.push('r')
+                }
+            }
+            return res
+        })
+        const openMidiOn = async (page: Page): Promise<void> => {
+            await page.click('[data-action="playback-settings"]')
+            await page.waitForSelector('[role="menu"]')
+        }
+        const midiOnChecked = async (page: Page): Promise<string | null> => {
+            await openMidiOn(page)
+            const checked = await page.getAttribute('[role="menuitemcheckbox"]:has-text("Enable MIDI input")', 'aria-checked')
+            await page.keyboard.press('Escape')
+            return checked
+        }
+
+        it('does not ask at the start; "Enable MIDI input" asks, then the device works', async () => {
+            const { page, context } = await midiPage('prompt')
+            expect(await page.evaluate(() => (window as unknown as FakeMidi).__midi.requests)).toBe(0)
+            expect(await midiOnChecked(page)).toBe('false')
+            await openMidiOn(page)
+            await page.click('[role="menuitemcheckbox"]:has-text("Enable MIDI input")')
+            await page.waitForFunction(() => (window as unknown as FakeMidi).__midi.requests === 1)
+            expect(await midiOnChecked(page)).toBe('true')
+
+            // the device is connected: a key begins the note input at the selected note
+            await selectFirst(page)
+            await send(page, [0x90, 60, 100])
+            await page.waitForFunction(() => (window as unknown as FakeMidi).__sv.currentScore().inputState().noteEntryMode())
+            await send(page, [0x80, 60, 0])
+            await page.waitForTimeout(100)
+            expect((await firstPitches(page))[0]).toBe('60')
+
+            // off: nothing arrives
+            await openMidiOn(page)
+            await page.click('[role="menuitemcheckbox"]:has-text("Enable MIDI input")')
+            expect(await midiOnChecked(page)).toBe('false')
+            const before = await firstPitches(page)
+            await send(page, [0x90, 62, 100], [0x80, 62, 0])
+            await page.waitForTimeout(100)
+            expect(await firstPitches(page)).toEqual(before)
+            await context.close()
+        }, 180000)
+
+        it('a refused permission and a browser without MIDI are explained', async () => {
+            const refused = await midiPage('prompt')
+            await refused.page.evaluate(() => (window as unknown as FakeMidi).__midi.setPermission('denied'))
+            await openMidiOn(refused.page)
+            await refused.page.click('[role="menuitemcheckbox"]:has-text("Enable MIDI input")')
+            await refused.page.waitForFunction(() => /MIDI/.test(document.getElementById('status')?.textContent ?? ''))
+            expect(await refused.page.textContent('#status')).toContain('Access to MIDI devices is blocked')
+            await refused.context.close()
+
+            const { page, context } = await midiPage('none')
+            await openMidiOn(page)
+            expect(await page.getAttribute('[role="menuitemcheckbox"]:has-text("Enable MIDI input")', 'aria-disabled')).toBe('true')
+            await page.keyboard.press('Escape')
+            await page.evaluate("import('/actions/actions.ts').then((a) => a.triggerAction('preference-dialog'))")
+            await page.click('dialog.preferences li:has-text("Note input")')
+            expect(await page.textContent('.midi-access-hint')).toContain('This browser does not support MIDI devices')
+            expect(await page.isDisabled('dialog.preferences input[type="checkbox"] >> nth=0')).toBe(true)
+            await context.close()
+        }, 180000)
+
+        it('connects without asking if the permission was given; nothing happens behind a dialog or in another tab', async () => {
+            const { page, context } = await midiPage('granted')
+            expect(await midiOnChecked(page)).toBe('true')
+            await page.evaluate("import('/actions/actions.ts').then((a) => a.triggerAction('preference-dialog'))")
+            await page.click('dialog.preferences li:has-text("Audio & MIDI")')
+            expect(await page.$eval('dialog.preferences select', e => (e as HTMLSelectElement).selectedOptions[0].textContent)).toBe('Fake Keyboard')
+
+            await selectFirst(page)
+            await send(page, [0x90, 60, 100], [0x80, 60, 0])
+            await page.waitForTimeout(100)
+            expect(await noteEntry(page)).toBe(false)
+            await page.click('dialog.preferences button[value="ok"]')
+
+            // another tab of the score got the focus
+            await page.evaluate(() => {
+                new BroadcastChannel('musescoreweb:midi-input').postMessage('focused')
+            })
+            await page.waitForTimeout(50)
+            await selectFirst(page)
+            await send(page, [0x90, 60, 100], [0x80, 60, 0])
+            await page.waitForTimeout(100)
+            expect(await noteEntry(page)).toBe(false)
+
+            // back in this tab; a note off goes where its note on went
+            await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+            await send(page, [0x90, 60, 100])
+            await page.waitForTimeout(100)
+            expect(await noteEntry(page)).toBe(true)
+            await page.evaluate(() => new BroadcastChannel('musescoreweb:midi-input').postMessage('focused'))
+            await page.waitForTimeout(50)
+            await send(page, [0x80, 60, 0], [0x90, 62, 100])
+            await page.waitForTimeout(100)
+            expect((await firstPitches(page))[1]).not.toBe('62')
+            await context.close()
+        }, 180000)
+
+        it('a mapped key runs its action and enters no note; the mapping stays after a reload', async () => {
+            const { page, context } = await midiPage('granted')
+            await page.evaluate("import('/actions/actions.ts').then((a) => a.triggerAction('preference-dialog'))")
+            await page.click('dialog.preferences li:has-text("MIDI mappings")')
+            await page.click('tr[data-action="note-input"]')
+            await page.click('.midi-mappings-buttons button >> nth=0')
+            await page.waitForSelector('dialog.edit-midi-mapping[open]')
+            expect(await page.isDisabled('dialog.edit-midi-mapping button[value="add"]')).toBe(true)
+            await send(page, [0xB0, 66, 127])
+            await page.waitForFunction(() => (document.querySelector('dialog.edit-midi-mapping input') as HTMLInputElement).value.includes('Fake Keyboard > CC 66'))
+            await page.click('dialog.edit-midi-mapping button[value="add"]')
+            // only the mapping dialog closes
+            expect(await page.textContent('tr[data-action="note-input"] td:last-child')).toBe('CC 66')
+            await page.click('dialog.preferences button[value="ok"]')
+
+            await page.reload()
+            await scoreShown(page)
+            await page.evaluate("import('/scoreview.ts').then((m) => { window.__sv = m })") // a string: not transformed by vitest
+            await selectFirst(page)
+            await send(page, [0xB0, 66, 127])
+            await page.waitForFunction(() => (window as unknown as FakeMidi).__sv.currentScore().inputState().noteEntryMode())
+            await send(page, [0xB0, 66, 0])
+            await page.waitForTimeout(100)
+            expect(await noteEntry(page)).toBe(true)
+            await context.close()
+        }, 180000)
+
+        it('the real synthesizer: nothing is kept for later before the audio output runs, then the keys sound until released', async () => {
+            const { page, context } = await midiPage('granted', AMAZING())
+            await page.evaluate(() => {
+                const p = (window as unknown as { __museencorePlayback: { synth: { noteOn: (...a: unknown[]) => void; noteOff: (...a: unknown[]) => void; isRunning: () => boolean; __on?: number; __off?: number; __isRunning?: () => boolean } } }).__museencorePlayback
+                const s = p.synth
+                // headless Chrome has no autoplay policy: the output as it is before the first user gesture
+                s.__isRunning = s.isRunning.bind(s)
+                s.isRunning = () => false
+                s.__on = 0
+                s.__off = 0
+                const on = s.noteOn.bind(s)
+                const off = s.noteOff.bind(s)
+                s.noteOn = (...a) => { s.__on!++; on(...a) }
+                s.noteOff = (...a) => { s.__off!++; off(...a) }
+            })
+            const counts = (): Promise<number[]> => page.evaluate(() => {
+                const s = (window as unknown as { __museencorePlayback: { synth: { __on: number; __off: number } } }).__museencorePlayback.synth
+                return [s.__on, s.__off]
+            })
+            // before a user gesture (a preview only; no selection): after loading the sounds it is dropped
+            await send(page, [0x90, 60, 100])
+            await page.waitForFunction(() => (window as unknown as { __museencorePlayback: { synth: { isLoaded(): boolean } } }).__museencorePlayback.synth.isLoaded(), null, { timeout: 120000 })
+            await page.waitForTimeout(200)
+            await send(page, [0x80, 60, 0])
+            await page.waitForTimeout(200)
+            expect(await counts()).toEqual([0, 0])
+
+            await page.evaluate(() => {
+                const s = (window as unknown as { __museencorePlayback: { synth: { isRunning: () => boolean; __isRunning: () => boolean } } }).__museencorePlayback.synth
+                s.isRunning = s.__isRunning
+            })
+            await page.waitForFunction(() => (window as unknown as FakeMidi).__museencorePlayback.synth.isRunning(), null, { timeout: 60000 })
+            await send(page, [0x90, 64, 100])
+            await page.waitForFunction(() => (window as unknown as { __museencorePlayback: { synth: { __on: number } } }).__museencorePlayback.synth.__on === 1, null, { timeout: 120000 })
+            expect((await counts())[1]).toBe(0) // until the release
+            await send(page, [0x80, 64, 0])
+            await page.waitForFunction(() => (window as unknown as { __museencorePlayback: { synth: { __off: number } } }).__museencorePlayback.synth.__off === 1)
+            await context.close()
+        }, 300000)
+    })
 })

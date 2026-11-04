@@ -1157,6 +1157,23 @@ dialog.preferences .dialog-buttons { margin: 0; padding: 12px 24px; border-top: 
 .preferences-page { flex: 1; padding: 16px 24px; overflow: auto; }
 .preferences-section h3 { margin: 0 0 8px; font-size: 13px; }
 .preferences-section select { min-width: 240px; }
+.preferences-section.midi-devices, .preferences-section.note-input { margin-bottom: 20px; }
+.preferences-expandable summary { cursor: pointer; margin: 4px 0; }
+.preferences-expandable[open] { display: flex; flex-direction: column; gap: 4px; }
+.midi-access-hint { margin: 4px 0; white-space: normal; }
+.midi-mappings { display: flex; flex-direction: column; gap: 8px; min-height: 100%; }
+.midi-mappings-list { width: 100%; border-collapse: collapse; }
+.midi-mappings-list[aria-disabled="true"] { opacity: 0.5; }
+.midi-mappings-list th { text-align: left; text-transform: capitalize; font-weight: 600; padding: 4px 8px; border-bottom: 1px solid var(--border); }
+.midi-mappings-list td { padding: 4px 8px; }
+.midi-mappings-list .icon-glyph, .edit-midi-mapping-action .icon-glyph { display: inline-block; width: 20px; text-align: center; vertical-align: middle; line-height: 1; }
+.midi-mappings-list tbody tr[aria-selected="true"] { background: var(--selected); }
+.midi-mappings-buttons { display: flex; justify-content: flex-end; gap: 8px; }
+dialog.edit-midi-mapping { width: min(538px, calc(100vw - 32px)); }
+dialog.edit-midi-mapping .dialog-header { padding: 0; }
+.edit-midi-mapping-action { text-align: center; }
+.edit-midi-mapping-field { display: flex; align-items: center; gap: 10px; padding: 0; border: 0; }
+.edit-midi-mapping-field input { flex: 1; border-color: var(--accent); }
 .autosave-row { display: flex; align-items: center; gap: 12px; }
 .autosave-row .number-with-unit { display: inline-flex; align-items: center; gap: 4px; }
 .autosave-row input[type="number"] { width: 64px; }

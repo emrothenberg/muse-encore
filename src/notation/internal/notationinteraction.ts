@@ -13,6 +13,7 @@
  * Score::nextElement/prevElement), moveStringSelection, anchor lines, drop of dragged palette items / mime data.
  */
 
+import { NotationConfiguration } from './notationconfiguration'
 import '../../engraving/editing/spell'
 import { SplitJoinMeasure } from '../../engraving/editing/splitjoinmeasure'
 import { HDuration, Voicing } from '../../engraving/dom/realizedharmony'
@@ -24,7 +25,7 @@ import { LineF, PointF, RectF } from '../../framework/draw/types/geometry'
 import { DirectionV, DurationType, ElementType, LayoutBreakType, VOICES, nidx, type staff_idx_t, type track_idx_t, type voice_idx_t } from '../../engraving/types/types'
 import type { Rest } from '../../engraving/dom/rest'
 import { Pad } from '../../engraving/dom/score'
-import { NoteEntryMethod } from '../../engraving/dom/input'
+import { NoteEntryMethod, type InputState } from '../../engraving/dom/input'
 import { AccidentalType } from '../../engraving/dom/accidentaldata'
 import { Pid, PropertyFlags, propertyUserName } from '../../engraving/dom/property'
 import type { UpDownMode } from '../../engraving/dom/mscore'
@@ -86,7 +87,6 @@ import { Color } from '../../framework/draw/types/color'
 import { mtrc } from '../../framework/global/translation'
 import { isVerticalBoxTextStyle } from '../notationtypes'
 import type { ElementGroup } from '../../engraving/dom/elementgroup'
-import type { PaintOptions } from '../../engraving/rendering/paintoptions'
 import type { TBox } from '../../engraving/dom/box'
 import type { FretDiagram } from '../../engraving/dom/fret'
 import type { MeasureBase } from '../../engraving/dom/measurebase'
@@ -108,11 +108,16 @@ import { MScore as NoteInputMScore, MsError as NoteInputMsError } from '../../en
 import { ScoreRenderer } from '../../engraving/rendering/score/scorerenderer'
 import { NoteType as GraceNoteType } from '../../engraving/dom/chordrest'
 import { isNotesIntervalValid, type TupletOptions } from '../notationtypes'
-import type { ShadowNote } from '../../engraving/dom/shadownote'
+import { ShadowNote } from '../../engraving/dom/shadownote'
 import type { Slur } from '../../engraving/dom/slur'
 import type { OttavaType } from '../../engraving/dom/ottava'
 import type { HairpinType } from '../../engraving/dom/hairpin'
-import type { Position } from '../../engraving/dom/score'
+import { Position } from '../../engraving/dom/score'
+import { Accidental } from '../../engraving/dom/accidental'
+import { NoteVal } from '../../engraving/dom/input'
+import { noteValToAccidentalVal, noteValToLine } from '../../engraving/dom/utils'
+import { TDraw } from '../../engraving/rendering/score/tdraw'
+import type { PaintOptions } from '../../engraving/rendering/paintoptions'
 import type { SymId } from '../../engraving/types/symid'
 import { ArticulationsUpdateMode, flipArticulations, splitArticulations } from '../../engraving/dom/articulation'
 import { PlacementV, type TransposeDirection } from '../../engraving/types/types'
@@ -126,6 +131,27 @@ import { EditSystemLocks } from '../../engraving/editing/editsystemlocks'
 import { AddRemoveSystemLockType } from '../notationtypes'
 
 /** C++ NotationInteraction::ShadowNoteParams */
+/** C++ static accidentalType(const InputState&, const NoteVal&, int line) of notationinteraction.cpp */
+function previewAccidentalType(is: InputState, nval: NoteVal, line: number): AccidentalType {
+    if (is.rest()) {
+        return AccidentalType.NONE
+    }
+
+    const accVal = is.accidentalType() !== AccidentalType.NONE
+        ? Accidental.subtype2value(is.accidentalType())
+        : noteValToAccidentalVal(nval, is.staff()!, is.tick())
+
+    const segment = is.segment()!
+    const [existingAccVal, error] = segment.measure().findAccidentalAtLine(segment, is.staffIdx(), line)
+
+    if (!error && accVal !== existingAccVal) {
+        const type = Accidental.value2subtype(accVal)
+        return type === AccidentalType.NONE ? AccidentalType.NATURAL : type
+    }
+
+    return AccidentalType.NONE
+}
+
 interface ShadowNoteParams {
     duration: TDuration
     accidentalType: AccidentalType
@@ -382,6 +408,112 @@ export class NotationInteraction {
         shadowNote.setPos(position.pos)
 
         return true
+    }
+
+    /** C++ NotationInteraction::previewNotes */
+    private previewNotes(): ShadowNoteParams[] {
+        const result: ShadowNoteParams[] = []
+
+        const is = this.score().inputState()
+        if (!is.isValid()) {
+            return result
+        }
+
+        const segment = is.segment()!
+        const staffIdx = is.staffIdx()
+        const staff = this.score().staff(staffIdx)
+        const system = segment.system()
+        const sysStaff = system ? system.staff(staffIdx) : null
+        const measure = segment.measure()
+
+        if (!staff || !sysStaff || !measure) {
+            return result
+        }
+
+        const tick = is.tick()
+        const measurePos = measure.canvasPos()
+        const lineDist = staff.staffType(tick).lineDistance().val()
+            * (staff.isTabStaff(tick) ? 1 : 0.5)
+            * staff.staffMag(tick)
+            * this.score().style().spatium()
+
+        const nvals = is.rest() ? [new NoteVal()] : is.notes()
+
+        for (const nval of nvals) {
+            const line = noteValToLine(nval, staff, tick)
+            const y = sysStaff.y() + line * lineDist
+
+            const position = new Position()
+            position.segment = segment
+            position.staffIdx = staffIdx
+            position.line = line
+            position.pos = new PointF(segment.x(), y).plus(measurePos)
+
+            result.push({
+                duration: is.rest() ? is.duration() : new TDurationValue(),
+                accidentalType: previewAccidentalType(is, nval, line),
+                articulationIds: new Set<SymId>(),
+                position,
+            })
+        }
+
+        result.sort((p1, p2) => p1.position.line - p2.position.line)
+
+        return result
+    }
+
+    /** C++ NotationInteraction::shouldDrawInputPreview */
+    shouldDrawInputPreview(): boolean {
+        return this.m_noteInput.isNoteInputMode() && this.m_noteInput.usingNoteInputMethod(NoteEntryMethod.BY_DURATION)
+    }
+
+    /** C++ NotationInteraction::drawInputPreview: the notes of the next input at the cursor (input by duration) */
+    drawInputPreview(painter: Painter, opt: PaintOptions): void {
+        const paramsList = this.previewNotes()
+        if (paramsList.length === 0) {
+            return
+        }
+
+        const previewList = paramsList.map((params) => {
+            const preview = new ShadowNote(this.score())
+            this.doShowShadowNote(preview, params)
+            return preview
+        })
+
+        const is = this.score().inputState()
+        const isUp = !is.rest() && previewList[0].computeUp()
+        let isLeft = isUp
+        let prevLine = Number.MAX_SAFE_INTEGER
+
+        const correctNotePositionIfNeed = (note: ShadowNote): void => {
+            if (paramsList.length === 1) {
+                return
+            }
+
+            const conflict = Math.abs(prevLine - note.lineIndex()) < 2
+            prevLine = note.lineIndex()
+
+            if (conflict || isUp !== isLeft) {
+                isLeft = !isLeft
+            }
+
+            if (isUp === isLeft) {
+                return
+            }
+
+            const noteheadBbox = note.symBbox(note.noteheadSymbol())
+
+            if (isLeft) {
+                note.move(new PointF(-noteheadBbox.width(), 0))
+            } else {
+                note.move(new PointF(noteheadBbox.width(), 0))
+            }
+        }
+
+        for (const note of isUp ? [...previewList].reverse() : previewList) {
+            correctNotePositionIfNeed(note)
+            TDraw.drawItem(note, painter, opt)
+        }
     }
 
     hideShadowNote(): void {
@@ -883,7 +1015,7 @@ export class NotationInteraction {
         }
 
         if (!this.m_noteInput.isNoteInputMode()) {
-            this.m_noteInput.startNoteInput(NoteEntryMethod.BY_NOTE_NAME) // C++ configuration()->defaultNoteInputMethod()
+            this.m_noteInput.startNoteInput(NotationConfiguration.defaultNoteInputMethod())
         }
 
         if (is.usingNoteEntryMethod(NoteEntryMethod.BY_DURATION) || is.usingNoteEntryMethod(NoteEntryMethod.RHYTHM)) {
