@@ -269,7 +269,7 @@ describe.skipIf(!CHROME || !hasSubmodule).each(['viewer', 'editor'])('%s', (app)
         await context.close()
     }, 120000)
 
-    it('moves the view beyond the pages and centers the page (editor: the first measure) again', async () => {
+    it('moves the view beyond the pages and centers the first measure again; its page if the page fits', async () => {
         const { page, context } = await newPage()
         await openScore(page, 'amazing.mscz')
         await handDrag(page, app, 1500, 1200)
@@ -279,14 +279,16 @@ describe.skipIf(!CHROME || !hasSubmodule).each(['viewer', 'editor'])('%s', (app)
             return [Math.round(v.right - p.left), Math.round(v.bottom - p.top)]
         })
         expect(moved).toEqual([48, 48]) // only a strip of the page stays visible
+        // the whole page fits into the view (the default zoom): the page is centered
         await page.click(sel.center)
-        if (!editor) {
-            expect(await pageCenterOffset(page)).toEqual([0, 0])
-        } else {
-            // without a selection: the first measure, in the upper left part of the page
-            const [firstX, firstY] = await pageCenterOffset(page)
-            expect(firstX).toBeGreaterThan(50)
-            expect(firstY).toBeGreaterThan(50)
+        expect(await pageCenterOffset(page)).toEqual([0, 0])
+        // zoomed in: without a selection the first measure, in the upper left part of the page
+        await page.selectOption(sel.zoom, '200')
+        await page.click(sel.center)
+        const [firstX, firstY] = await pageCenterOffset(page)
+        expect(firstX).toBeGreaterThan(50)
+        expect(firstY).toBeGreaterThan(50)
+        if (editor) {
             // the middle mouse button moves the view too
             await handDrag(page, app, 300, 200, true)
             expect(await pageCenterOffset(page)).toEqual([firstX + 300, firstY + 200])
@@ -295,8 +297,8 @@ describe.skipIf(!CHROME || !hasSubmodule).each(['viewer', 'editor'])('%s', (app)
             await page.keyboard.press('ControlOrMeta+a')
             await page.click(sel.center)
             const [x, y] = await pageCenterOffset(page)
-            expect(Math.abs(x)).toBeLessThan(40)
-            expect(Math.abs(y)).toBeGreaterThan(10)
+            expect(Math.abs(x)).toBeLessThan(80)
+            expect(Math.abs(y)).toBeGreaterThan(20)
         }
         await context.close()
     }, 120000)
@@ -382,7 +384,14 @@ describe.skipIf(!CHROME || !hasSubmodule).each(['viewer', 'editor'])('%s', (app)
         const paused = await text(page, 'play-time')
         await page.waitForTimeout(500)
         expect(await text(page, 'play-time')).toBe(paused)
+        // the center button: zoomed in, the measure of the paused position, after the rewind the first measure
+        await page.selectOption('#zoom', '200')
+        await page.click('#center')
+        const pausedOffset = await pageCenterOffset(page)
         await page.click('#rewind')
+        await page.click('#center')
+        const firstOffset = await pageCenterOffset(page)
+        expect(pausedOffset).not.toEqual(firstOffset)
         expect(await text(page, 'play-time')).toBe('0:00 / 0:41')
         await context.close()
     }, 120000)

@@ -9,6 +9,7 @@
 
 import { EditStyle } from './notationscene/editstyle'
 import { ScoreRangeUtilities } from './notation/utilities/scorerangeutilities'
+import { playalongMeasureBounds } from './playalong/api'
 import { CanvasPaintProvider, type Canvas2D } from './framework/draw/canvaspaintprovider'
 import { Painter } from './framework/draw/painter'
 import { Transform } from './framework/draw/types/transform'
@@ -1149,6 +1150,30 @@ export function firstMeasureBounds(score: Score): { page: number; x: number; y: 
     }
     const r = frame.translated(page.pos().times(-1))
     return { page: score.pages().indexOf(page), x: r.x() / DPI, y: r.y() / DPI, width: r.width() / DPI, height: r.height() / DPI }
+}
+
+/**
+ * The measure the center button shows (page, inches from the page's top left): the one being played, the selection (the
+ * rectangles on the page of its first one), the measure of the paused play position, or the first measure.
+ */
+export function centerTargetBounds(score: Score, playback?: { playing: boolean; tick: number } | null): { page: number; x: number; y: number; width: number; height: number } | null {
+    if (playback?.playing) {
+        const played = playalongMeasureBounds(score, playback.tick)
+        if (played) {
+            return played
+        }
+    }
+    const rects = selectionBounds(score)
+    if (rects.length) {
+        const page = rects[0].page
+        const onPage = rects.filter(r => r.page === page)
+        const x = Math.min(...onPage.map(r => r.x))
+        const y = Math.min(...onPage.map(r => r.y))
+        const right = Math.max(...onPage.map(r => r.x + r.width))
+        const bottom = Math.max(...onPage.map(r => r.y + r.height))
+        return { page, x, y, width: right - x, height: bottom - y }
+    }
+    return (playback?.tick ? playalongMeasureBounds(score, playback.tick) : null) ?? firstMeasureBounds(score)
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

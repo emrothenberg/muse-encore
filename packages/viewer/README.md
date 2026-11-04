@@ -62,7 +62,7 @@ const viewer = applyMuseEncoreViewer(targetElement, pathToMuseScoreFile, {
     toolbarGroups: {
         pageNavigation: true,     // previous / next page, page indicator
         pageView: true,           // view mode (page / continuous views) and page layout
-        zoom: true,               // zoom in / out, zoom levels, center page
+        zoom: true,               // zoom in / out, zoom levels, center measure
         playback: false,          // play / pause, rewind, play position
         print: true,              // print button
         fullScreen: true,         // full screen button

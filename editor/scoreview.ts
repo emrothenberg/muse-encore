@@ -9,9 +9,10 @@
 import { showScoreContextMenu } from './components/ScoreContextMenu'
 import { isInstrumentChangeSymbol, withSelectedInstrument } from './dialogs/instrumentchoice'
 import { useSyncExternalStore } from 'react'
+import { centerViewOnMeasureOrPage } from '../shared/centerview'
 import {
     clearSelection, drawPage, drawPageSvg, setCanLayoutIcons, hasSelection, initEngravingFonts, isModified, isTwoSided, moveSelection,
-    firstMeasureBounds, noteInputCursorBounds, noteInputState, onImageDecoded, onNotationChanged, pageCount, pageSize, scoreTitle, selectAll, selectionBounds, selectionInfo,
+    centerTargetBounds, noteInputCursorBounds, noteInputState, onImageDecoded, onNotationChanged, pageCount, pageSize, scoreTitle, selectAll, selectionBounds, selectionInfo,
     SvgGlyphDefs, type MasterScore, type Score, currentNotation, onCurrentNotationChanged, setViewMode as setScoreViewMode, type ViewMode, drawContinuousPanel,
     // copy/paste, text editing, drag
     CLIPBOARD_FORMATS, clipboardContents, executeAction, isActionEnabled, isDragging, setClipboardContents, setClipboardImage, textEditingInfo,
@@ -967,35 +968,15 @@ export function centerPage(idx = currentPage()): void {
     }
 }
 
-/**
- * The "Center measure" button: centers the selection (e.g. the selected measures; the rectangles on the page of the
- * first one) or, without a selection, the first measure of the score
- */
-export function centerSelectionOrFirstMeasure(): void {
-    let rects = score ? selectionBounds(score) : []
-    if (!rects.length) {
-        const first = score ? firstMeasureBounds(score) : null
-        rects = first ? [first] : []
-    }
-    if (!rects.length) {
+/** The center button: the measure of centerTargetBounds, or its page if that fits into the view (same in the viewer) */
+export function centerMeasureOrPage(playback: { playing: boolean; tick: number }): void {
+    const target = score ? centerTargetBounds(score, playback) : null
+    const el = target ? pages[target.page] : null
+    if (target && el) {
+        centerViewOnMeasureOrPage(viewport, el, pageSize(score!, target.page).width, target)
+    } else {
         centerPage()
-        return
     }
-    const page = rects[0].page
-    const onPage = rects.filter(r => r.page === page)
-    const left = Math.min(...onPage.map(r => r.x))
-    const top = Math.min(...onPage.map(r => r.y))
-    const right = Math.max(...onPage.map(r => r.x + r.width))
-    const bottom = Math.max(...onPage.map(r => r.y + r.height))
-    const el = pages[page]
-    if (!el) {
-        return
-    }
-    const pr = el.getBoundingClientRect()
-    const f = pr.width / pageSize(score!, page).width
-    const vr = viewport.getBoundingClientRect()
-    viewport.scrollLeft += pr.left + (left + right) / 2 * f - (vr.left + viewport.clientWidth / 2)
-    viewport.scrollTop += pr.top + (top + bottom) / 2 * f - (vr.top + viewport.clientHeight / 2)
 }
 
 /** the continuous views: shows the beginning of their page (centered along an axis where it fits) */

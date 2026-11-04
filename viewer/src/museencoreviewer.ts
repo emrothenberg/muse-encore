@@ -8,9 +8,10 @@
  */
 /// <reference types="vite/client" />
 import {
-    drawContinuousPanel, drawPage, drawPageSvg, initEngravingFonts, isTwoSided, layoutScore, onImageDecoded, openFileAccept, openScoreFile, scoreBaseName, pageCount,
+    centerTargetBounds, drawContinuousPanel, drawPage, drawPageSvg, initEngravingFonts, isTwoSided, layoutScore, onImageDecoded, openFileAccept, openScoreFile, scoreBaseName, pageCount,
     pageSize, playbackCursorBounds, scoreTitle, setViewMode as setScoreViewMode, SvgGlyphDefs, withPageView, type MasterScore,
 } from '../../src/index'
+import { centerViewOnMeasureOrPage } from '../../shared/centerview'
 import { CENTER_ICON } from '../../shared/icons'
 import { SOUNDFONT_CDN_URL } from '../../shared/playback/soundfont'
 import { ViewerPlayback, type ViewerPlaybackState } from './playback'
@@ -142,7 +143,7 @@ function template(appTitle: string): string {
         <button id="zoom-out" class="icon" title="Zoom out (Ctrl+−)" aria-label="Zoom out">${ICON.zoomOut}</button>
         <select id="zoom" title="Zoom" aria-label="Zoom"></select>
         <button id="zoom-in" class="icon" title="Zoom in (Ctrl++)" aria-label="Zoom in">${ICON.zoomIn}</button>
-        <button id="center" class="icon" title="Center page" aria-label="Center page">${ICON.center}</button>
+        <button id="center" class="icon" title="Center measure" aria-label="Center measure">${ICON.center}</button>
     </div>
 
     <div class="group" data-group="playback">
@@ -1285,6 +1286,17 @@ html, body { margin: 0; padding: 0; background: #fff; }
         }
     }
 
+    /** The center button: the measure of centerTargetBounds, or its page if that fits into the view (same in the editor) */
+    private centerMeasureOrPage(): void {
+        const target = this.score ? centerTargetBounds(this.score, this.playback?.state()) : null
+        const el = target ? this.pages[target.page] : null
+        if (target && el) {
+            centerViewOnMeasureOrPage(this.viewport, el, pageSize(this.score!, target.page).width, target)
+        } else {
+            this.centerPage()
+        }
+    }
+
     /** the continuous views: shows the beginning of their page (centered along an axis where it fits) */
     private showPageStart(): void {
         const el = this.pages[0]
@@ -1805,7 +1817,7 @@ html, body { margin: 0; padding: 0; background: #fff; }
             viewport.focus({ preventScroll: true })
         })
         on(btn.print, 'click', () => void this.print())
-        on(btn.center, 'click', () => this.centerPage())
+        on(btn.center, 'click', () => this.centerMeasureOrPage())
         on(btn.fullscreen, 'click', () => this.toggleFullScreen())
         on(btn.help, 'click', () => this.helpDialog.showModal())
         on(this.helpDialog, 'close', () => {

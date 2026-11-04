@@ -15,7 +15,7 @@ export interface MuseEncoreViewerToolbarGroups {
     pageNavigation?: boolean
     /** the view mode (page view, continuous views) and the page layout (side by side, vertically, two pages); default true */
     pageView?: boolean
-    /** zoom in / out, the zoom levels and fit modes, center page; default true */
+    /** zoom in / out, the zoom levels and fit modes, center measure; default true */
     zoom?: boolean
     /** play / pause, back to the start, the play position (MuseScore's MIDI renderer with MS Basic.sf3); default false */
     playback?: boolean

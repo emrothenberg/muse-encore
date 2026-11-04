@@ -8,7 +8,7 @@ import { removeAllScores } from '../db'
 import { ICON_CODES } from './uiactiondata'
 import type { ViewMode } from '../../src/index'
 import {
-    centerPage, centerSelectionOrFirstMeasure, goToPage, lastPage, onScoreViewChanged, print, scoreViewState, setFitMode, setOrientation,
+    centerMeasureOrPage, centerPage, goToPage, lastPage, onScoreViewChanged, print, scoreViewState, setFitMode, setOrientation,
     setViewMode, showShortcutsHelp, stepPage, toggleFullscreen, toggleSpread, zoomAt, zoomStep,
 } from '../scoreview'
 import {
@@ -37,7 +37,7 @@ import { AddBoxesTarget, canAddCustomTuplet, hasSelection } from '../../src/inde
 import { currentScore } from '../scoreview'
 import { actionsChanged, isActionEnabled, registerAction, triggerAction } from './actions'
 import { registerNotationActions } from './notationactions'
-import { registerPlaybackActions } from '../playback/playbackcontroller'
+import { playbackState, registerPlaybackActions } from '../playback/playbackcontroller'
 import { registerPlayalongActions } from '../playalong/playalongcontroller'
 import '../playback/playbackview'
 import '../playalong/playalongview'
@@ -182,7 +182,7 @@ export function registerAppActions(): void {
         run: toggleSpread, enabled: () => pageViewShown() && scoreViewState().spreadAvailable, checked: () => scoreViewState().spread,
     }, { title: [null, 'Two pages'], description: [null, 'Two pages (for scores with a two-sided page layout)'], icon: 0xEF7F, checkable: true })
     // the icon is an SVG (ToolBars.tsx)
-    registerAction('view-center-page', { run: centerSelectionOrFirstMeasure, enabled: scoreShown },
+    registerAction('view-center-page', { run: () => centerMeasureOrPage(playbackState()), enabled: scoreShown },
         { title: [null, 'Center measure'], description: [null, 'Center the selected measure, or the first measure'] })
     registerAction('view-shortcuts-help', { run: showShortcutsHelp }, { title: [null, '?'], description: [null, 'Keyboard shortcuts'] })
 

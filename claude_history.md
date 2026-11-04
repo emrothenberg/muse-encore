@@ -1793,3 +1793,4 @@
   The new strings' translations are unreviewed machine translations.
 - Viewer package: option `colorScheme` ('auto' = the browser's, also for any other value; 'light', 'dark') replaces `theme`, which is removed (breaking for embeds using it). The examples with options use colorScheme: 'light'.
 - Viewer: the center button ("Center page") has the editor's icon carbon:center-to-fit, defined once in shared/icons.ts. Compared the viewer's other icons with the editor's: all equal.
+- Center button: one implementation for the editor and the viewer, both titled "Center measure" (action `view-center-page`). `centerTargetBounds` (src/index.ts) picks the measure: being played, the selection (none in the viewer), the paused position, the first measure; `centerViewOnMeasureOrPage` (shared/centerview.ts) centers it or, if the page fits into the view in width and height, the page with it (a spread, if it fits too). Before, the viewer always centered the current page.
