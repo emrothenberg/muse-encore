@@ -2,14 +2,14 @@
  * SPDX-License-Identifier: GPL-3.0-only
  * MuseEncore — port of MuseScore Studio (https://github.com/musescore/MuseScore)
  *
- * Bumps the version of MuseEncore (package.json and package-lock.json) and, if wanted, the one of the npm package
- * muse-encore-viewer (packages/viewer/package.json, and its CDN URL in packages/viewer/example/index.html), commits it ("Bumps version to x.y.z") and creates the tag vx.y.z.
- * Nothing is pushed or published.
+ * Bumps the version of MuseEncore (package.json and package-lock.json) and of the npm package muse-encore-viewer
+ * (packages/viewer/package.json, and its CDN URL in packages/viewer/example/index.html), which always have the same
+ * version, commits it ("Bumps version to x.y.z") and creates the tag vx.y.z. Nothing is pushed or published.
  *
- *   npm run bump-version [-- <version> [<viewer version> | -]]
+ *   npm run bump-version [-- <version>]
  *
- * Missing versions are asked for, suggesting the next patch version (0.0.14 -> 0.0.15); Enter takes the suggestion,
- * or type another version. "-" (or answering no) leaves the viewer package's version.
+ * A missing version is asked for, suggesting the next patch version (0.0.14 -> 0.0.15); Enter takes the suggestion,
+ * or type another version.
  */
 
 import { execFileSync } from 'node:child_process'
@@ -76,45 +76,29 @@ async function main(rl: Interface): Promise<void> {
         fail(`${[...FILES, VIEWER_FILE, ...VIEWER_CDN_FILES].join(' / ')} have uncommitted changes`)
     }
     const current = readVersion('package.json')
+    const viewerCurrent = readVersion(VIEWER_FILE)
     const ask = async (question: string, suggestion: string): Promise<string> =>
         (await rl.question(`${question} [${suggestion}]: `)).trim() || suggestion
 
-    const version = checkVersion(process.argv[2] || await ask(`MuseEncore ${current} -> new version`, nextPatch('package.json', current)))
+    const version = checkVersion(process.argv[2] || await ask(`MuseEncore and muse-encore-viewer ${current} -> new version`, nextPatch('package.json', current)))
     const tag = `v${version}`
     if (git('tag', '--list', tag)) {
         fail(`tag ${tag} exists already`)
     }
 
-    const viewerCurrent = readVersion(VIEWER_FILE)
-    let viewerAnswer = process.argv[3]
-    if (!viewerAnswer) {
-        const yes = /^y/i.test(await ask(`Bump the npm package muse-encore-viewer (${viewerCurrent}) too? (y/n)`, 'y'))
-        viewerAnswer = yes ? await ask(`muse-encore-viewer ${viewerCurrent} -> new version`, nextPatch(VIEWER_FILE, viewerCurrent)) : '-'
-    }
-    const viewerVersion = viewerAnswer === '-' ? undefined : checkVersion(viewerAnswer)
-
-    for (const file of FILES) {
+    for (const file of [...FILES, VIEWER_FILE]) {
         setVersion(file, version)
     }
-    const files = [...FILES]
-    if (viewerVersion) {
-        setVersion(VIEWER_FILE, viewerVersion)
-        files.push(VIEWER_FILE)
-        for (const file of VIEWER_CDN_FILES) {
-            setCdnVersion(file, viewerVersion)
-            files.push(file)
-        }
+    for (const file of VIEWER_CDN_FILES) {
+        setCdnVersion(file, version)
     }
     // only the version files, other changes of the working tree stay uncommitted
-    const message = `Bumps version to ${version}` + (viewerVersion ? ` (muse-encore-viewer ${viewerVersion})` : '')
-    git('commit', '-m', message, '--', ...files)
+    git('commit', '-m', `Bumps version to ${version}`, '--', ...FILES, VIEWER_FILE, ...VIEWER_CDN_FILES)
     git('tag', tag)
 
-    console.log(`MuseEncore ${current} -> ${version}` + (viewerVersion ? `, muse-encore-viewer ${viewerCurrent} -> ${viewerVersion}` : ''))
+    console.log(`MuseEncore ${current} -> ${version}, muse-encore-viewer ${viewerCurrent} -> ${version}`)
     console.log(`Committed and tagged ${tag}. Not pushed: git push && git push origin ${tag}`)
-    if (viewerVersion) {
-        console.log(`Remember to publish the viewer package: npm run build:viewer-package && cd packages/viewer && npm publish`)
-    }
+    console.log(`Remember to publish the viewer package: npm run build:viewer-package && cd packages/viewer && npm publish`)
 }
 
 const rl = createInterface({ input: process.stdin, output: process.stdout })

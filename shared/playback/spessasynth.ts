@@ -85,6 +85,10 @@ export class SpessaSynthesizer implements Synthesizer {
         }
     }
 
+    isRunning(): boolean {
+        return this.m_context?.state === 'running'
+    }
+
     private opts(time?: number): { time: number } | undefined {
         return time !== undefined ? { time } : undefined
     }

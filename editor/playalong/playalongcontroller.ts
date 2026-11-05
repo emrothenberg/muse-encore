@@ -19,10 +19,11 @@ import { currentScore, onScoreViewChanged, scoreChanged, scoreViewState } from '
 import { onSettingsChanged, settings, updateSettings } from '../settings'
 import { createNoteDetector, type DetectionUpdate, type NoteDetector, type NoteDetectorSettings, type OvertoneFilterLevel } from '../../shared/notedetection/notedetector'
 import { calibrationSteps, Calibrator, type CalibrationKind, type CalibrationResult } from '../../shared/notedetection/calibration'
+import { closeKeptMicrophone } from '../../shared/notedetection/microphone'
 import calibrationSheet from './calibration.mscx?raw'
 
 const CALIBRATION_FILE_NAME = 'Note detection calibration.mscx'
-import { ChordGrouper, PlayalongFollower } from './follower'
+import { ChordGrouper, PlayalongFollower } from '../../shared/playalong/follower'
 import { playbackState } from '../playback/playbackcontroller'
 
 export interface PlayalongState {
@@ -271,6 +272,7 @@ async function start(calibrate = false): Promise<void> {
     try {
         s_detector ??= await createNoteDetector({
             baseUrl: import.meta.env.BASE_URL, input: detectorInput(), settings: detectorSettings(),
+            keepMicrophone: () => settings().playback.playalongKeepMicrophone,
         })
         if (session !== s_session) {
             return
@@ -392,6 +394,9 @@ function setOvertoneFilter(level: OvertoneFilterLevel): void {
 
 let s_detectorSettings = detectorSettings()
 onSettingsChanged(() => {
+    if (!settings().playback.playalongKeepMicrophone) {
+        closeKeptMicrophone()
+    }
     const d = detectorSettings()
     if (d.overtoneFilter !== s_detectorSettings.overtoneFilter || d.calibration !== s_detectorSettings.calibration) {
         s_detectorSettings = d
@@ -514,6 +519,16 @@ export function registerPlayalongActions(): void {
             description: [null, 'Overtone filter: the overtones of low notes (piano) are not taken for notes played'],
         })
     }
+    registerAction('playalong-keep-microphone', {
+        run: () => {
+            updateSettings('playback', { playalongKeepMicrophone: !settings().playback.playalongKeepMicrophone })
+            actionsChanged()
+        },
+        checked: () => settings().playback.playalongKeepMicrophone,
+    }, {
+        title: [null, 'Keep microphone active during session'], checkable: true,
+        description: [null, 'The browser does not ask for the microphone again until this tab is closed. While Playalong is off, it still shows the microphone as in use, but nothing is recorded or processed.'],
+    })
     registerAction('playalong-calibrate', { run: () => void calibrate() }, {
         title: [null, 'Calibrate the note detection…'],
         description: [null, 'Play the notes of a calibration sheet: the note detection measures your instrument and microphone'],

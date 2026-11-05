@@ -11,5 +11,5 @@ _site/
 # the built npm package of the viewer (npm run build:viewer-package)
 /packages/viewer/dist/
 /packages/viewer/fonts/
+/packages/viewer/basic-pitch/
 /packages/viewer/LICENSE
-/packages/viewer/example/score.mscz

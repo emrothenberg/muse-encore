@@ -32,6 +32,9 @@ src/
                         FontProvider (opentype.js, replaces Qt font metrics), canvas and SVG paint providers,
                         Pixmap/ImageProvider/SvgRenderer + imagecache.ts (asynchronous image decoding; pages are redrawn
                         when an image is decoded: onImageDecoded/imagesDecoded in index.ts)
+  framework/midi        MIDI 1.0 events (midievent.ts; MidiEvent = C++ midi::Event), internal/platform/web/webmidiinport.ts: the input port
+                        on the browser's Web MIDI API (permission, devices, connection; no sysex, no MIDI 2.0)
+  framework/midiremote  MidiRemote: the actions of MIDI keys and controllers (the MIDI mappings)
   framework/mpe         PlaybackSetupData, SoundId/SoundCategory/SoundSubCategory as strings (soundid.ts, generated)
   framework/audio/fluidsynth  soundmapping: the MS Basic presets of MuseScore 4's Fluid synth per sound and articulation
                         (findPrograms, articulationSounds; tables generated)
@@ -63,7 +66,8 @@ src/
   notation, project     MasterNotation / NotationParts / MasterNotationParts / NotationProject: creating new scores
                         (createScore), the part and staff commands of the Layout panel (editing/editpart.ts, editstaff.ts);
                         NotationInteraction / NotationNoteInput / NotationUndoStack: selection, editing, note input;
-                        NotationMidiInput: the real-time advance (no MIDI); NotationPlayback (notationplayback.ts:
+                        NotationMidiInput: MIDI input (note on/off, chords, real-time modes, preview, controllers; onNoteOns: the
+                        notes of the microphone), the real-time advance; NotationPlayback (notationplayback.ts:
                         the events of the MIDI renderer in seconds, metronome, preview notes, loop boundaries);
                         ProjectMigrator / MdlMigrator: the migration of 3.x and older scores (layoutScore's `migration`
                         option; the app asks with MuseScore's migration dialog)
@@ -76,7 +80,7 @@ src/
   playalong             api.ts: the measures in the played order with their pitches, their rectangles (the editor's
                         Playalong, not in MuseScore)
   notationscene         NotationViewInputController (clicks, keys), NotationActionController (action codes -> commands),
-                        PlaybackCursor, LoopMarker, ContinuousPanel (left edge of the horizontal continuous view),
+                        PlaybackCursor, NotationRuler (the cursor above the staff of the input by duration mode), LoopMarker, ContinuousPanel (left edge of the horizontal continuous view),
                         NotationContextMenuModel (the score's context menu), EditStaff/EditStaffType (the logic of the
                         Staff/Part properties and Edit staff type dialogs; the app's dialogs show them), SelectDialog/
                         SelectNoteDialog ("Select > More…"; NotationElements filters the elements)
@@ -96,13 +100,13 @@ tools/gen/              generators for tables derived from the C++ sources (re-r
 tools/                  node scripts: render to PNG, compare with MuseScore output
 viewer/                 MuseEncore Viewer: src/museencoreviewer.ts is the viewer component (plain DOM in a shadow root, styles in
                         src/viewer.css: page view, continuous views incl. fit to window, zoom, print, full screen, playback with
-                        src/playback.ts; options and API types in src/types.ts); main.ts is the app (opening files, storage.ts),
+                        src/playback.ts, playalong with src/playalong.ts (microphone or MIDI input, src/midiinput.ts); options and API types in src/types.ts); main.ts is the app (opening files, storage.ts),
                         src/index.ts the npm package's entry (applyMuseEncoreViewer), embed.html a dev page of the package API
 packages/viewer/        the npm package "muse-encore-viewer" (package.json, README; dist/ + fonts/ are built by
                         tools/build-viewer-package.ts with viewer/vite.lib.config.ts: one bundled ES module for CDNs)
-shared/                 code of both apps: playback/ (Synthesizer interface, SpessaSynth + MS Basic.sf3 loaded on first use and
+shared/                 code of both apps: icons.ts (SVG icons), playalong/follower.ts (the score following of the playalong), playback/ (Synthesizer interface, SpessaSynth + MS Basic.sf3 loaded on first use and
                         cached, player.ts scheduler), vite-plugin-sound.ts (serves/copies the soundfont), notedetection/
-                        (NoteDetector interface: microphone -> notes; basicpitch/ = Spotify's basic-pitch, Apache-2.0,
+                        (NoteDetector interface: microphone -> notes; microphone.ts opens, closes or keeps the microphone; basicpitch/ = Spotify's basic-pitch, Apache-2.0,
                         vendored with its TensorFlow.js model, loaded on demand, running in a Web Worker (worker.ts;
                         the audio worklet sends the audio to it; levelgate.ts drops too quiet notes, overtonefilter.ts the overtones of low notes); calibration.ts (the values measured with
                         the calibration sheet); replaceable in
@@ -114,13 +118,15 @@ editor/                 MuseEncore (the editor), Vite score editor app: React UI
                         strings without context are translated in locales/webstrings.json, webtr()), score view
                         (scoreview.ts, DOM code from the viewer; drops of palette cells), dragcontroller.ts (the data of
                         the current drag), session.ts (open/create/save scores; the migration dialog
-                        dialogs/MigrationDialog.tsx), db.ts (IndexedDB via
+                        dialogs/MigrationDialog.tsx), tabs.ts (scores open in other tabs: Web Locks), db.ts (IndexedDB via
                         Dexie), settings.ts (localStorage), playback/ (playbackcontroller.ts = playback actions on shared/playback,
                         playbackview.ts cursor/pan/loop markers; `?synth=none` = no sound), playalong/ (Playalong, not
-                        in MuseScore: follower.ts = score following, playalongcontroller.ts, playalongview.ts; in note
+                        in MuseScore: shared/playalong/follower.ts = score following, playalongcontroller.ts, playalongview.ts; in note
                         input mode the button enters the notes played (enterMidiNotes = NotationMidiInput note-ons); calibration of the note
                         detection with calibration.mscx and CalibrationBox.tsx;
-                        `?playalong-input=test-melody` instead of the microphone), panels/ (the left dock: PanelDock.tsx tabs + splitter,
+                        `?playalong-input=test-melody` instead of the microphone), midi/ (midicontroller.ts = MidiInputOutputController: connection, events to MidiRemote and the score,
+                        settings.midi, midi-on, MIDI input pitch; only the visible, last focused tab takes the events; the permission is asked by
+                        "Enable MIDI input" only), panels/ (the left dock: PanelDock.tsx tabs + splitter,
                         panels.ts state, palettes/ (palette tree stored as PaletteTree XML in localStorage, dialogs),
                         layout/, inspector/ UIs; editbridge.ts = all score changes of the
                         panels; the Layout panel's commands go through the library's NotationParts port)
@@ -146,6 +152,9 @@ methods keep their C++ names, so changes in MuseScore can be followed file by fi
   see share/locale/*.ts), so MuseScore's translations apply; commands are MuseScore's actions (codes, titles, icons,
   shortcuts from the generated table) registered with `registerAction`. Strings MuseScore does not have are
   translated in editor/locales/webstrings.json (all of MuseScore's languages; `webtr()`, `[null, text]` titles).
+- The same command has the same icon in the editor and the viewer: when an icon changes, change it in both. Both use
+  MuseScore's icon codes (the viewer's `ICON` table, the editor's actions); SVG icons (for what MuseScore's icon font does
+  not have) are defined once in `shared/icons.ts`.
 - TypeScript 7 (native compiler); `npm run typecheck` / `npm run build` use it.
 - C++ destructors with side effects must be emulated explicitly (e.g. ~LayoutContext -> end of ScoreLayout.layoutRange).
 - DOM -> rendering calls (C++ `renderer()->...`) go through hooks set in `rendering/score/scorerenderer.ts`.
@@ -180,8 +189,8 @@ methods keep their C++ names, so changes in MuseScore can be followed file by fi
   compare-out/musicxml/ref)
 - `npm run compare:mscx` - diff writeMscx/saveMscz output (main .mscx, style, parts) against MuseScore's own re-save
   (`mscore -o out.mscx`, cached in compare-out/mscx/ref); EIDs are normalized
-- `npm run bump-version [-- <version> [<viewer version> | -]]` - set the version of package.json and optionally of the
-  viewer package (asks, suggesting the next patch versions), commit "Bumps version to x.y.z" and tag vx.y.z (no push,
+- `npm run bump-version [-- <version>]` - set the version of package.json and of the viewer package, which always have
+  the same version (asks, suggesting the next patch version), commit "Bumps version to x.y.z" and tag vx.y.z (no push,
   no npm publish)
 - `npx tsx tools/gen/<gen-*.ts> MuseScore` - regenerate tables from the reference sources (symids, styledef,
   property, typesconv, noteheads, accidentals, textstyle, drumset, instrumenttemplates, scoreorders, soundmapping, harmonytodiagram [-> fonts], uiactions [-> editor/actions])

@@ -68,8 +68,8 @@ class ScoreDb extends Dexie {
 
 const db = new ScoreDb()
 
-/** keep at most this many scores (the least recently opened ones are removed) */
-const MAX_SCORES = 100
+/** at most this many scores are stored: for one more, the user chooses a score to delete (session.ts: ensureRoomForScore) */
+export const MAX_SCORES = 500
 
 function newId(): string {
     return crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -91,7 +91,7 @@ export async function contentHash(data: ArrayBuffer): Promise<string | undefined
 export async function addScore(entry: Omit<ScoreEntry, 'id' | 'created' | 'modified' | 'opened'>, content: Omit<ScoreContent, 'id'>, asNew = false): Promise<string | null> {
     const now = Date.now()
     try {
-        return await db.transaction('rw', db.scores, db.contents, db.autosaves, async () => {
+        return await db.transaction('rw', db.scores, db.contents, async () => {
             const existing = entry.hash && !asNew ? await db.scores.where('hash').equals(entry.hash).first() : undefined
             if (existing) {
                 await db.scores.update(existing.id, { ...entry, opened: now })
@@ -100,14 +100,81 @@ export async function addScore(entry: Omit<ScoreEntry, 'id' | 'created' | 'modif
             const id = newId()
             await db.scores.add({ ...entry, id, created: now, modified: now, opened: now })
             await db.contents.add({ ...content, id } as ScoreContent)
-            const old = await db.scores.orderBy('opened').reverse().offset(MAX_SCORES).primaryKeys()
-            await db.scores.bulkDelete(old)
-            await db.contents.bulkDelete(old)
-            await db.autosaves.bulkDelete(old)
             return id
         })
     } catch (e) {
         console.warn('could not store the score', e)
+        return null
+    }
+}
+
+export async function countScores(): Promise<number> {
+    try {
+        return await db.scores.count()
+    } catch {
+        return 0
+    }
+}
+
+/** all stored scores, least recently opened first */
+export async function scoresLeastRecentFirst(): Promise<ScoreEntry[]> {
+    try {
+        return await db.scores.orderBy('opened').toArray()
+    } catch {
+        return []
+    }
+}
+
+/** the ids of the stored scores with this file content */
+export async function scoreIdsWithHash(hash: string): Promise<string[]> {
+    try {
+        return (await db.scores.where('hash').equals(hash).primaryKeys()) as string[]
+    } catch {
+        return []
+    }
+}
+
+export async function scoreName(id: string): Promise<string | null> {
+    try {
+        return (await db.scores.get(id))?.name ?? null
+    } catch {
+        return null
+    }
+}
+
+/** which of these scores have an autosave newer than their saved version (what opening them would restore) */
+export async function scoresWithUnsavedChanges(ids: readonly string[]): Promise<string[]> {
+    try {
+        const entries = await db.scores.bulkGet([...ids])
+        const autosaves = await db.autosaves.bulkGet([...ids])
+        return ids.filter((_, i) => {
+            const entry = entries[i]
+            const autosave = autosaves[i]
+            return !!entry && !!autosave && autosave.time >= entry.modified
+        })
+    } catch {
+        return []
+    }
+}
+
+/**
+ * The file of a score with unsaved changes was opened again: the score keeps its autosave as a separate score. It is
+ * not the file's score any more: it gets a new name and is neither found by the file's content nor written to the file.
+ * Returns its new name.
+ */
+export async function separateFromFile(id: string, rename: (name: string) => string): Promise<string | null> {
+    try {
+        return await db.transaction('rw', db.scores, async () => {
+            const entry = await db.scores.get(id)
+            if (!entry) {
+                return null
+            }
+            const name = rename(entry.name)
+            await db.scores.update(id, { name, hash: undefined, handle: undefined })
+            return name
+        })
+    } catch (e) {
+        console.warn('could not rename the score', e)
         return null
     }
 }
@@ -221,14 +288,6 @@ export async function autosaveIds(): Promise<string[]> {
 export async function removeAutosave(id: string): Promise<void> {
     try {
         await db.autosaves.delete(id)
-    } catch {
-        // ignore
-    }
-}
-
-export async function removeAllAutosaves(): Promise<void> {
-    try {
-        await db.autosaves.clear()
     } catch {
         // ignore
     }

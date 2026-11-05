@@ -440,7 +440,9 @@ export class NotationPlayback {
                 return
             }
             const pitch = Math.min(Math.max(note.ppitch(), 0), 127)
-            result.push({ channel: synthChannel(c.channel(), note.voice()), pitch, velocity, duration })
+            // C++ PlaybackModel: the velocity of a MIDI key instead of the dynamics (RenderingContext::userVelocityFraction)
+            const noteVelocity = note.userVelocity() > 0 ? note.userVelocity() : velocity
+            result.push({ channel: synthChannel(c.channel(), note.voice()), pitch, velocity: noteVelocity, duration })
         }
         for (const item of items) {
             if (item.isNote()) {
@@ -492,6 +494,15 @@ export class NotationPlayback {
      * the notes of the note input to play now (C++ PlaybackController::playNotes creates temporary notes on the
      * segment with these note values and plays them)
      */
+    /** the synthesizer channel of a staff at a tick (the sound of the note input); -1 if there is none */
+    channelOfStaff(staffIdx: number, tick: number): number {
+        const staff = this.m_score.staff(staffIdx)
+        const f = Fraction.fromTicks(tick)
+        const instr = staff?.part().instrument(f)
+        const c = staff && instr ? instr.channel(staff.channel(f, 0)) ?? instr.channel(0) : null
+        return c ? synthChannel(c.channel(), 0) : -1
+    }
+
     previewNotesForNoteVals(notes: readonly NoteVal[], staffIdx: number, segment: Segment, duration: number): PreviewNote[] {
         const staff = this.m_score.staff(staffIdx)
         if (!staff) {

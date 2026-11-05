@@ -10,6 +10,7 @@
  * MuseScore's horizontal page view: the page position is added).
  */
 
+import { NotationConfiguration } from './notationconfiguration'
 import { PointF, RectF } from '../../framework/draw/types/geometry'
 import { TranslatableString } from '../../framework/global/types/translatablestring'
 import { Fraction } from '../../engraving/types/fraction'
@@ -103,9 +104,6 @@ export class NotationNoteInput {
     private m_noteInputEnded = new Notification()
     private m_noteAdded = new Notification()
     private m_stateChanged = new Notification()
-
-    /** C++ NotationConfiguration::addAccidentalDotsArticulationsToNextNoteEntered() (default true) */
-    addAccidentalDotsArticulationsToNextNoteEntered = true
 
     constructor(getScore: () => Score, interaction: NotationInteraction, undoStack: NotationUndoStack) {
         this.m_getScore = getScore
@@ -877,7 +875,7 @@ export class NotationNoteInput {
         const is = this.score().inputState()
         is.update(this.score().selection())
 
-        if (!this.addAccidentalDotsArticulationsToNextNoteEntered) {
+        if (!NotationConfiguration.addAccidentalDotsArticulationsToNextNoteEntered()) {
             is.setAccidentalType(AccidentalType.NONE)
             is.setDots(0)
             is.setArticulationIds([])

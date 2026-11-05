@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest'
 import { DEMOS, hasSubmodule, openScore } from './helpers'
 import { playalongMeasures, type PlayalongMeasure } from '../src/index'
-import { PlayalongFollower, type PlayalongMode } from '../editor/playalong/follower'
+import { PlayalongFollower, type PlayalongMode } from '../shared/playalong/follower'
 
 /** a seeded random generator (the results are reproducible) */
 function rng(seed: number): () => number {

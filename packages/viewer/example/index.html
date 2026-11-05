@@ -8,11 +8,25 @@
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/minimaxcss@latest/minimax-starter.css"
     />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/styles/idea.min.css"
+    />
+    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/highlight.min.js"></script>
     <style>
       body {
         max-width: 960px;
         margin: 32px auto;
         padding: 0 16px;
+      }
+      pre {
+        padding: 0;
+        background: none;
+        border-radius: 8px;
+        margin-bottom: 2rem;
+        code.hljs {
+          background-color: var(--color-gray-light);
+        }
       }
       .score {
         height: 560px;
@@ -22,51 +36,254 @@
       .score.small {
         height: 360px;
       }
+      p {
+        margin-bottom: 1rem;
+      }
+      h3 {
+        padding-top: 2rem;
+      }
+      h1 {
+        margin-bottom: -1rem;
+      }
+      #overview {
+        display: none;
+      }
+      @media (min-width: 1200px) {
+        body {
+          max-width: 1232px;
+          padding-left: 256px;
+        }
+        #overview {
+          display: block;
+          position: fixed;
+          top: 2rem;
+          left: max(16px, calc(50% - 600px));
+          width: 216px;
+          padding: 0.5rem 1rem;
+          border-radius: 8px;
+          font-size: 0.9rem;
+          background: var(--color-gray-light);
+        }
+        #overview a {
+          display: block;
+          margin-bottom: 0.75rem;
+          text-decoration: none;
+          color: currentColor;
+        }
+        #overview a[aria-current] {
+          font-weight: bold;
+        }
+      }
+      #configurator {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 1rem;
+        margin-bottom: 1rem;
+      }
+      #configurator fieldset {
+        margin: 0;
+        padding: 0.5rem 1rem 1rem;
+        display: grid;
+      }
+      #configurator section {
+        margin: 0.25rem 0;
+        padding: 0;
+      }
+      #configurator label {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        margin: 0;
+      }
+      #configurator fieldset:disabled {
+        opacity: 0.5;
+      }
     </style>
   </head>
   <body>
-    <h1>muse-encore-viewer</h1>
-    <p>A score in a web page, with the default options:</p>
+    <nav id="overview" aria-label="Overview">
+      <a href="#default-options">A score on a web page, with the default options</a>
+      <a href="#without-toolbar">Without a toolbar</a>
+      <a href="#continuous-view">Continuous view with granular toolbar settings</a>
+      <a href="#configurator-section">Configurator</a>
+    </nav>
+
+    <h1>Examples</h1>
+
+    <h3 id="default-options">A score on a web page, with the default options</h3>
     <div id="score1" class="score"></div>
 
-    <p>Without a toolbar:</p>
+    <h3 id="without-toolbar">Without a toolbar</h3>
     <div
-      id="score3"
+      id="score2"
       class="score small"
       style="aspect-ratio: 3/4; width: 100%; height: auto"
     ></div>
 
-    <p>
-      The continuous view (fit to window) with the playback, no print and full
-      screen buttons, the status bar:
-    </p>
+    <h3 id="continuous-view">Continuous view with granular toolbar settings</h3>
     <div
-      id="score2"
+      id="score3"
       class="score small"
       style="aspect-ratio: 2; width: 100%; height: auto"
     ></div>
 
+    <h3 id="configurator-section">Configurator</h3>
+    <p>
+      Change a setting and the viewer below is created again with the code shown
+      here, where <code>urlToMuseScoreFile</code> is the URL of your score.
+    </p>
+    <form id="configurator"></form>
+    <p>
+      <button type="reset" form="configurator">Reset to defaults</button>
+    </p>
+    <pre><code id="configurator-code" class="hljs"></code></pre>
+    <div id="configured" class="score"></div>
+
     <!-- npm run build:viewer-package, then serve packages/viewer (e.g. npx vite packages/viewer) and open /example/?url=<score> -->
     <script type="module">
-      import applyMuseEncoreViewer from 'https://cdn.jsdelivr.net/npm/muse-encore-viewer@1.2.1/dist/muse-encore-viewer.js'
+      import applyMuseEncoreViewer from "https://cdn.jsdelivr.net/npm/muse-encore-viewer@1.4.2/dist/muse-encore-viewer.js";
 
-      const url =
-        new URLSearchParams(location.search).get("url") ?? "score.mscz";
-      window.viewers = [
-        applyMuseEncoreViewer("#score1", url),
-        applyMuseEncoreViewer(document.getElementById("score2"), url, {
-          continuousView: "horizontal",
-          toolbarGroups: {
-            playback: true,
-            print: false,
-            fullScreen: false,
-            pageView: false,
-          },
-          showStatusBar: true,
-          keyboardShortcuts: true,
-        }),
-        applyMuseEncoreViewer("#score3", url, { disableToolbar: true }),
-      ];
+      const urlToMuseScoreFile =
+        new URLSearchParams(location.search).get("url") ?? "bei_gezeiten.mscz";
+
+      applyMuseEncoreViewer("#score1", urlToMuseScoreFile);
+      applyMuseEncoreViewer("#score2", urlToMuseScoreFile, {
+        disableToolbar: true,
+        colorScheme: "light",
+      });
+      applyMuseEncoreViewer("#score3", urlToMuseScoreFile, {
+        continuousView: "horizontal",
+        toolbarGroups: {
+          playback: true,
+          playalong: true,
+          print: false,
+          fullScreen: false,
+          pageView: false,
+        },
+        showStatusBar: true,
+        keyboardShortcuts: true,
+        colorScheme: "light",
+      });
+
+      // a boolean is a checkbox, a list a select; the default (a boolean, the
+      // first entry of a list) is left out of the options. zoom's default
+      // depends on centerAndResizeToPage: null stands for not setting it
+      const SETTINGS = {
+        View: {
+          continuousView: [false, "horizontal", "vertical", "window-fit"],
+          pageOrientation: ["horizontal", "vertical"],
+          twoPages: false,
+          zoom: [null, "whole-page", "page-width", 50, 75, 100, 150, 200],
+          centerAndResizeToPage: [1, 2, 3, false],
+        },
+        Viewer: {
+          disableToolbar: false,
+          showStatusBar: false,
+          keyboardShortcuts: false,
+          colorScheme: ["auto", "light", "dark"],
+        },
+        toolbarGroups: {
+          file: false,
+          pageNavigation: true,
+          pageView: true,
+          zoom: true,
+          playback: false,
+          playalong: false,
+          print: true,
+          fullScreen: true,
+        },
+      };
+
+      const form = document.getElementById("configurator");
+      const controls = [];
+      for (const [group, settings] of Object.entries(SETTINGS)) {
+        const fieldset = document.createElement("fieldset");
+        fieldset.name = group;
+        fieldset.append(
+          Object.assign(document.createElement("legend"), { textContent: group }),
+        );
+        for (const [name, setting] of Object.entries(settings)) {
+          const label = document.createElement("label");
+          label.append(name);
+          let control;
+          if (Array.isArray(setting)) {
+            control = document.createElement("select");
+            for (const value of setting) {
+              control.add(
+                new Option(value === null ? "default" : value, JSON.stringify(value)),
+              );
+            }
+          } else {
+            control = document.createElement("input");
+            control.type = "checkbox";
+            control.defaultChecked = setting;
+          }
+          control.name = name;
+          label.append(control);
+          const section = document.createElement("section");
+          section.append(label);
+          fieldset.append(section);
+          controls.push({ group, name, setting, control });
+        }
+        form.append(fieldset);
+      }
+
+      const readOptions = () => {
+        const options = {};
+        const disableToolbar = form.elements.disableToolbar.checked;
+        form.elements.toolbarGroups.disabled = disableToolbar;
+        for (const { group, name, setting, control } of controls) {
+          const isList = Array.isArray(setting);
+          const value = isList ? JSON.parse(control.value) : control.checked;
+          if (value === (isList ? setting[0] : setting)) continue;
+          if (group !== "toolbarGroups") options[name] = value;
+          else if (!disableToolbar) (options.toolbarGroups ??= {})[name] = value;
+        }
+        return options;
+      };
+
+      const showCode = (options) => {
+        const args = Object.keys(options).length
+          ? ", " + JSON.stringify(options, null, 2).replace(/"(\w+)":/g, "$1:")
+          : "";
+        const source = `import applyMuseEncoreViewer from "https://cdn.jsdelivr.net/npm/muse-encore-viewer@1.4.2/dist/muse-encore-viewer.js";\n\napplyMuseEncoreViewer("#configured", urlToMuseScoreFile${args});`;
+        document.getElementById("configurator-code").innerHTML = hljs.highlight(
+          source,
+          { language: "javascript" },
+        ).value;
+      };
+
+      let viewer;
+      const apply = () => {
+        const options = readOptions();
+        showCode(options);
+        viewer?.destroy();
+        viewer = applyMuseEncoreViewer("#configured", urlToMuseScoreFile, options);
+      };
+      form.addEventListener("change", apply);
+      // the event comes before the form's values are reset
+      form.addEventListener("reset", () => setTimeout(apply));
+      apply();
+
+      // the overview: the title of the section with the most pixels in the
+      // window is bold; a section ends at the next section's title
+      const links = [...document.querySelectorAll("#overview a")];
+      const titles = links.map((link) => document.querySelector(link.hash));
+      const markVisibleSection = () => {
+        const visible = titles.map((title, i) => {
+          const top = title.getBoundingClientRect().top;
+          const bottom =
+            titles[i + 1]?.getBoundingClientRect().top ??
+            document.body.getBoundingClientRect().bottom;
+          return Math.min(bottom, innerHeight) - Math.max(top, 0);
+        });
+        const most = visible.indexOf(Math.max(...visible));
+        links.forEach((link, i) => link.toggleAttribute("aria-current", i === most));
+      };
+      addEventListener("scroll", markVisibleSection, { passive: true });
+      addEventListener("resize", markVisibleSection);
+      new ResizeObserver(markVisibleSection).observe(document.body);
     </script>
   </body>
 </html>

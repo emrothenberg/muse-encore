@@ -8,10 +8,15 @@
  */
 /// <reference types="vite/client" />
 import {
-    drawContinuousPanel, drawPage, drawPageSvg, initEngravingFonts, isTwoSided, layoutScore, onImageDecoded, openFileAccept, openScoreFile, scoreBaseName, pageCount,
+    centerTargetBounds, NONE_DEVICE_ID, playalongMeasureBounds, drawContinuousPanel, drawPage, drawPageSvg, firstPageIsRight, initEngravingFonts, layoutScore, onImageDecoded, openFileAccept, openScoreFile, scoreBaseName, pageCount,
     pageSize, playbackCursorBounds, scoreTitle, setViewMode as setScoreViewMode, SvgGlyphDefs, withPageView, type MasterScore,
 } from '../../src/index'
+import { centerViewOnMeasureOrPage } from '../../shared/centerview'
+import { CENTER_ICON } from '../../shared/icons'
+import { spreadPages, stepSpread } from '../../shared/spreads'
 import { SOUNDFONT_CDN_URL } from '../../shared/playback/soundfont'
+import { ViewerMidiInput, type ViewerMidiSettings } from './midiinput'
+import { ViewerPlayalong, type ViewerPlayalongState } from './playalong'
 import { ViewerPlayback, type ViewerPlaybackState } from './playback'
 import type {
     ContinuousView, MuseEncoreScoreInfo, MuseEncoreScoreSource, MuseEncoreViewer as IMuseEncoreViewer, MuseEncoreViewerOptions,
@@ -22,6 +27,14 @@ import logoSvg from '../../logo/muse-encore-logo.svg?raw'
 import { version as VIEWER_VERSION } from '../../packages/viewer/package.json'
 
 type ViewerViewMode = MuseEncoreViewSettings['viewMode']
+
+/** a rectangle of a page in inches */
+interface PageRect {
+    x: number
+    y: number
+    width: number
+    height: number
+}
 
 /** the options of the viewer app (not part of the package's API) */
 export interface MuseEncoreViewerAppOptions extends MuseEncoreViewerOptions {
@@ -45,6 +58,39 @@ export interface MuseEncoreViewerAppOptions extends MuseEncoreViewerOptions {
 function defaultFontsUrl(): string {
     return new URL(/* @vite-ignore */ '../fonts/', import.meta.url).href
 }
+
+/** the package's directory, which has the model of the note detection in basic-pitch/ */
+function defaultNoteDetectionUrl(): string {
+    return new URL(/* @vite-ignore */ '../', import.meta.url).href
+}
+
+/** the settings of the playalong and the MIDI input, kept between visits */
+const PLAYALONG_SETTINGS_KEY = 'musescoreweb:viewer-playalong'
+
+interface PlayalongSettings {
+    practice: boolean
+    midi: ViewerMidiSettings
+}
+
+function loadPlayalongSettings(): PlayalongSettings {
+    const defaults: PlayalongSettings = { practice: false, midi: { enabled: false, deviceId: '', deviceName: '' } }
+    try {
+        const stored = JSON.parse(localStorage.getItem(PLAYALONG_SETTINGS_KEY) ?? '{}') as Partial<PlayalongSettings>
+        return { practice: !!stored.practice, midi: { ...defaults.midi, ...stored.midi } }
+    } catch {
+        return defaults
+    }
+}
+
+function savePlayalongSettings(settings: PlayalongSettings): void {
+    try {
+        localStorage.setItem(PLAYALONG_SETTINGS_KEY, JSON.stringify(settings))
+    } catch {
+        // no storage (blocked site data): the settings last until the page is closed
+    }
+}
+
+const NOTE_NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B']
 
 let s_fonts: Promise<void> | null = null
 
@@ -91,14 +137,14 @@ const VIEW_MODES: Record<ContinuousView, ViewerViewMode> = {
 }
 
 const DEFAULT_GROUPS: Required<MuseEncoreViewerToolbarGroups> = {
-    file: false, pageNavigation: true, pageView: true, zoom: true, playback: false, print: true, fullScreen: true,
+    file: false, pageNavigation: true, pageView: true, zoom: true, playback: false, playalong: false, print: true, fullScreen: true,
 }
 
 // MuseScore's icon codes (src/framework/ui/view/iconcodes.h)
 const ICON = {
     open: '&#xEF23;', close: '&#xEF14;', prev: '&#xF39C;', next: '&#xF39B;', pagesH: '&#xEF1C;', pagesV: '&#xF3AF;',
-    twoPages: '&#xEF7F;', zoomOut: '&#xEF16;', zoomIn: '&#xEF18;', center: '&#xF48C;', print: '&#xF3B7;', fullscreen: '&#xEF15;',
-    play: '', pause: '', rewind: '&#xEF26;',
+    twoPages: '&#xEF7F;', zoomOut: '&#xEF16;', zoomIn: '&#xEF18;', center: `<svg width="1em" height="1em" viewBox="${CENTER_ICON.viewBox}" aria-hidden="true" style="display:block"><path fill="currentColor" d="${CENTER_ICON.path}"/></svg>`, print: '&#xF3B7;', fullscreen: '&#xEF15;',
+    play: '', pause: '', rewind: '&#xEF26;', microphone: '&#xF41B;', measurePrev: '&#xEF35;', measureNext: '&#xEF34;', practice: '&#xEF1F;', midi: '&#xEF98;',
 }
 
 const HOMEPAGE_URL = 'https://github.com/pstaender/muse-encore'
@@ -134,14 +180,14 @@ function template(appTitle: string): string {
             <button id="layout-h" class="icon" role="radio" title="Pages side by side" aria-label="Pages side by side">${ICON.pagesH}</button>
             <button id="layout-v" class="icon" role="radio" title="Pages vertically" aria-label="Pages vertically">${ICON.pagesV}</button>
         </div>
-        <button id="spread" class="icon toggle" title="Two pages (two-sided page layout)" aria-label="Two pages" aria-pressed="false">${ICON.twoPages}</button>
+        <button id="spread" class="icon toggle" title="Two pages" aria-label="Two pages" aria-pressed="false">${ICON.twoPages}</button>
     </div>
 
     <div class="group" data-group="zoom">
         <button id="zoom-out" class="icon" title="Zoom out (Ctrl+−)" aria-label="Zoom out">${ICON.zoomOut}</button>
         <select id="zoom" title="Zoom" aria-label="Zoom"></select>
         <button id="zoom-in" class="icon" title="Zoom in (Ctrl++)" aria-label="Zoom in">${ICON.zoomIn}</button>
-        <button id="center" class="icon" title="Center page" aria-label="Center page">${ICON.center}</button>
+        <button id="center" class="icon" title="Center measure" aria-label="Center measure">${ICON.center}</button>
     </div>
 
     <div class="group" data-group="playback">
@@ -149,6 +195,18 @@ function template(appTitle: string): string {
         <button id="play" class="icon" title="Play" aria-label="Play">${ICON.play}</button>
         <input id="play-position" class="play-position" type="range" min="0" max="0" step="0.1" value="0" aria-label="Play position">
         <span id="play-time" class="play-time" aria-live="off">0:00 / 0:00</span>
+    </div>
+
+    <div class="group" data-group="playalong">
+        <button id="playalong" class="icon toggle" title="Playalong: follow the score while you play (microphone or MIDI input)" aria-label="Playalong" aria-pressed="false">${ICON.microphone}</button>
+        <span id="playalong-follow" class="playalong-follow" hidden>
+            <button id="playalong-prev" class="icon" title="Previous measure" aria-label="Previous measure">${ICON.measurePrev}</button>
+            <span id="playalong-measure" class="playalong-measure-number" role="status" aria-label="Measure number">–</span>
+            <button id="playalong-next" class="icon" title="Next measure" aria-label="Next measure">${ICON.measureNext}</button>
+            <button id="playalong-practice" class="icon toggle" title="Playalong practice: also follow when you repeat measures, go back or skip measures" aria-label="Playalong practice" aria-pressed="false">${ICON.practice}</button>
+        </span>
+        <span id="playalong-status" class="playalong-status" role="status" hidden></span>
+        <button id="midi-settings" class="icon toggle" title="MIDI settings" aria-label="MIDI settings" aria-pressed="false">${ICON.midi}</button>
     </div>
 
     <div class="group end">
@@ -188,6 +246,7 @@ function template(appTitle: string): string {
     <table>
         <tr data-group="file"><td><kbd>Ctrl</kbd> <kbd>O</kbd></td><td>Open file</td></tr>
         <tr data-group="playback"><td><kbd>Space</kbd></td><td>Play / pause</td></tr>
+        <tr data-group="playalong"><td><kbd>←</kbd> / <kbd>→</kbd></td><td>Previous / next measure during the playalong</td></tr>
         <tr><td><kbd>Ctrl</kbd> <kbd>+</kbd> / <kbd>Ctrl</kbd> <kbd>−</kbd></td><td>Zoom in / out</td></tr>
         <tr><td><kbd>Ctrl</kbd> <kbd>0</kbd></td><td>Zoom to 100%</td></tr>
         <tr><td>Mouse wheel, pinch</td><td>Zoom at pointer</td></tr>
@@ -201,6 +260,15 @@ function template(appTitle: string): string {
     </table>
     <p class="muted">On macOS use <kbd>⌘</kbd> instead of <kbd>Ctrl</kbd>.</p>
     <form method="dialog" class="dialog-buttons"><button id="about" type="button" class="secondary">About…</button><button class="primary">Close</button></form>
+</dialog>
+
+<dialog id="midi-dialog" class="midi-settings" aria-label="MIDI settings">
+    <h2>MIDI settings</h2>
+    <label class="midi-field"><input type="checkbox" id="midi-on"> Enable MIDI input</label>
+    <label class="midi-field">MIDI input <select id="midi-device"></select></label>
+    <p id="midi-message" class="midi-message" role="status"></p>
+    <p class="muted">With a connected device, Playalong follows the keys you play instead of listening to the microphone.</p>
+    <form method="dialog"><button class="primary">Close</button></form>
 </dialog>
 
 <dialog id="about-dialog" class="about" aria-label="About MuseEncore Viewer">
@@ -285,7 +353,14 @@ export class MuseEncoreViewer implements IMuseEncoreViewer {
     private readonly playPosition: HTMLInputElement
     private readonly playTime: HTMLSpanElement
     private readonly btn: Record<'open' | 'open2' | 'clear' | 'prev' | 'next' | 'layoutH' | 'layoutV' | 'spread' | 'zoomIn' | 'zoomOut'
-        | 'print' | 'center' | 'fullscreen' | 'help' | 'play' | 'rewind', HTMLButtonElement>
+        | 'print' | 'center' | 'fullscreen' | 'help' | 'play' | 'rewind' | 'playalong' | 'playalongPrev' | 'playalongNext' | 'playalongPractice' | 'midiSettings', HTMLButtonElement>
+    private readonly midiDialog: HTMLDialogElement
+    private readonly midiOn: HTMLInputElement
+    private readonly midiDevice: HTMLSelectElement
+    private readonly midiMessage: HTMLParagraphElement
+    private readonly playalongFollow: HTMLSpanElement
+    private readonly playalongMeasure: HTMLSpanElement
+    private readonly playalongStatus: HTMLSpanElement
 
     // state
     private score: MasterScore | null = null
@@ -319,6 +394,10 @@ export class MuseEncoreViewer implements IMuseEncoreViewer {
     private panelShownKey = ''
     private readonly playback: ViewerPlayback | null
     private readonly cursor: HTMLDivElement
+    private readonly playalong: ViewerPlayalong | null
+    private readonly midi: ViewerMidiInput | null
+    private readonly playalongMarker: HTMLDivElement
+    private playalongShownTick = -1
     private autoScrollPausedUntil = 0
     private programmaticScroll = 0
 
@@ -350,8 +429,8 @@ export class MuseEncoreViewer implements IMuseEncoreViewer {
         this.host = document.createElement('div')
         this.host.className = 'muse-encore-viewer'
         this.host.style.cssText = 'display:block;width:100%;height:100%'
-        if (options.theme && options.theme !== 'auto') {
-            this.host.dataset.theme = options.theme
+        if (options.colorScheme === 'light' || options.colorScheme === 'dark') {
+            this.host.dataset.theme = options.colorScheme
         }
         this.shadow = this.host.attachShadow({ mode: 'open' })
         const style = document.createElement('style')
@@ -382,7 +461,16 @@ export class MuseEncoreViewer implements IMuseEncoreViewer {
             open: $('open'), open2: $('open2'), clear: $('clear'), prev: $('prev'), next: $('next'), layoutH: $('layout-h'),
             layoutV: $('layout-v'), spread: $('spread'), zoomIn: $('zoom-in'), zoomOut: $('zoom-out'), print: $('print'),
             center: $('center'), fullscreen: $('fullscreen'), help: $('help'), play: $('play'), rewind: $('rewind'),
+            playalong: $('playalong'), playalongPrev: $('playalong-prev'), playalongNext: $('playalong-next'),
+            playalongPractice: $('playalong-practice'), midiSettings: $('midi-settings'),
         }
+        this.midiDialog = $('midi-dialog')
+        this.midiOn = $('midi-on')
+        this.midiDevice = $('midi-device')
+        this.midiMessage = $('midi-message')
+        this.playalongFollow = $('playalong-follow')
+        this.playalongMeasure = $('playalong-measure')
+        this.playalongStatus = $('playalong-status')
 
         // the groups to show
         for (const el of this.root.querySelectorAll<HTMLElement>('[data-group]')) {
@@ -417,6 +505,30 @@ export class MuseEncoreViewer implements IMuseEncoreViewer {
             ? new ViewerPlayback(options.soundFontUrl ?? SOUNDFONT_CDN_URL, s => this.playbackChanged(s))
             : null
 
+        this.playalongMarker = document.createElement('div')
+        this.playalongMarker.className = 'playalong-marker'
+        this.playalongMarker.setAttribute('aria-hidden', 'true')
+        this.playalongMarker.hidden = true
+        if (this.m_groups.playalong) {
+            const stored = loadPlayalongSettings()
+            const save = (): void => savePlayalongSettings({ practice: !!this.playalong?.state().practice, midi: this.midi!.settings() })
+            this.midi = new ViewerMidiInput(stored.midi, () => {
+                save()
+                this.midiChanged()
+            }, (pitch, time) => this.playalong?.midiNoteOn(pitch, time))
+            let practice = stored.practice
+            this.playalong = new ViewerPlayalong((options.noteDetectionUrl ?? defaultNoteDetectionUrl()).replace(/\/?$/, '/'), () => this.midi!.isReceiving(), practice, (s) => {
+                if (s.practice !== practice) {
+                    practice = s.practice
+                    save()
+                }
+                this.playalongChanged(s)
+            })
+        } else {
+            this.playalong = null
+            this.midi = null
+        }
+
         this.observer = new IntersectionObserver((entries) => {
             for (const e of entries) {
                 const el = e.target as HTMLDivElement
@@ -445,6 +557,7 @@ export class MuseEncoreViewer implements IMuseEncoreViewer {
         this.initZoomSelect()
         this.installListeners()
         this.updateControls()
+        this.midiChanged()
 
         void loadFonts(this.m_fontsUrl).then(
             () => { if (!this.score && !this.isBusy()) this.setStatus('Ready') },
@@ -614,7 +727,7 @@ html, body { margin: 0; padding: 0; background: #fff; }
             e.preventDefault()
             return true
         }
-        if (!this.m_opts.keyboardShortcuts || this.helpDialog.open || this.aboutDialog.open) {
+        if (!this.m_opts.keyboardShortcuts || this.helpDialog.open || this.aboutDialog.open || this.midiDialog.open) {
             return false
         }
         const mod = e.ctrlKey || e.metaKey
@@ -655,6 +768,8 @@ html, body { margin: 0; padding: 0; background: #fff; }
             this.goToPageIdx(0)
         } else if (key === 'End') {
             this.goToPageIdx(this.pages.length - 1)
+        } else if (!mod && (key === 'ArrowLeft' || key === 'ArrowRight') && this.playalong?.state().active) {
+            this.playalong.step(key === 'ArrowLeft' ? -1 : 1)
         } else if (!mod && key.startsWith('Arrow') && this.shadow.activeElement !== this.viewport) {
             // arrow keys scroll natively when the score has the focus
             const d = 60
@@ -684,6 +799,7 @@ html, body { margin: 0; padding: 0; background: #fff; }
     /** closes the score (the app's close button) */
     closeFile(): void {
         this.playback?.setScore(null)
+        this.playalong?.setScore(null)
         this.score = null
         this.fileName = ''
         this.m_opts.onFileClosed?.()
@@ -701,6 +817,8 @@ html, body { margin: 0; padding: 0; background: #fff; }
         this.resizeObserver.disconnect()
         this.removeImageListener()
         this.playback?.dispose()
+        this.playalong?.dispose()
+        this.midi?.dispose()
         clearTimeout(this.renderTimer)
         clearTimeout(this.scrollRenderTimer)
         clearTimeout(this.reflowTimer)
@@ -775,6 +893,7 @@ html, body { margin: 0; padding: 0; background: #fff; }
             this.applyViewMode()
             ++this.layoutVersion
             this.playback?.setScore(s)
+            this.playalong?.setScore(s)
             this.buildPages()
             this.showInitialPage()
             this.setStatus(`${name} · ${n} ${n === 1 ? 'page' : 'pages'} · layout ${Math.round(t1 - t0)} ms`)
@@ -839,13 +958,14 @@ html, body { margin: 0; padding: 0; background: #fff; }
     }
 
     private spreadActive(): boolean {
-        return !!this.score && this.settings.viewMode === 'page' && this.settings.spread && isTwoSided(this.score)
+        return !!this.score && this.settings.viewMode === 'page' && this.settings.spread
     }
 
     private buildPages(keepPosition = false): void {
         const scroll = { left: this.viewport.scrollLeft, top: this.viewport.scrollTop }
         this.hideContinuousPanel()
         this.cursor.remove()
+        this.playalongMarker.remove()
         this.observer.disconnect()
         this.visible.clear()
         this.pagesDiv.replaceChildren()
@@ -864,12 +984,12 @@ html, body { margin: 0; padding: 0; background: #fff; }
                 this.pages.push(this.makePage(i))
             }
             if (this.spreadActive()) {
-                // two-sided layout: the first page is a right-hand page
+                // a first page with an odd number is a right-hand page
                 const placeholder = document.createElement('div')
                 placeholder.className = 'page placeholder'
                 placeholder.dataset.page = '0'
                 placeholder.setAttribute('aria-hidden', 'true')
-                const items = [placeholder, ...this.pages]
+                const items = firstPageIsRight(this.score!) ? [placeholder, ...this.pages] : this.pages
                 for (let i = 0; i < items.length; i += 2) {
                     const spread = document.createElement('div')
                     spread.className = 'spread'
@@ -888,6 +1008,7 @@ html, body { margin: 0; padding: 0; background: #fff; }
         this.updatePan()
         this.applyZoom(this.computeZoom())
         this.updateCursor()
+        this.updatePlayalongMarker(false)
         if (keepPosition) {
             this.viewport.scrollTo(scroll.left, scroll.top)
             return
@@ -1186,11 +1307,9 @@ html, body { margin: 0; padding: 0; background: #fff; }
         btn.layoutH.setAttribute('aria-checked', String(horizontal))
         btn.layoutV.setAttribute('aria-checked', String(!horizontal))
         this.viewModeSelect.value = this.settings.viewMode
-        const twoSided = !!this.score && isTwoSided(this.score)
-        btn.spread.disabled = !twoSided || !pageView
+        btn.spread.disabled = !has || !pageView
         btn.spread.setAttribute('aria-pressed', String(this.spreadActive()))
-        btn.spread.title = twoSided ? 'Two pages' : 'Two pages (only for scores with a two-sided page layout)'
-        for (const b of [btn.prev, btn.next, btn.zoomIn, btn.zoomOut, btn.center, btn.print, btn.play, btn.rewind]) {
+        for (const b of [btn.prev, btn.next, btn.zoomIn, btn.zoomOut, btn.center, btn.print, btn.play, btn.rewind, btn.playalong]) {
             b.disabled = !has
         }
         this.playPosition.disabled = !has
@@ -1284,6 +1403,17 @@ html, body { margin: 0; padding: 0; background: #fff; }
         }
     }
 
+    /** The center button: the measure of centerTargetBounds, or its page if that fits into the view (same in the editor) */
+    private centerMeasureOrPage(): void {
+        const target = this.score ? centerTargetBounds(this.score, this.playback?.state()) : null
+        const el = target ? this.pages[target.page] : null
+        if (target && el) {
+            centerViewOnMeasureOrPage(this.viewport, el, pageSize(this.score!, target.page).width, target)
+        } else {
+            this.centerPage()
+        }
+    }
+
     /** the continuous views: shows the beginning of their page (centered along an axis where it fits) */
     private showPageStart(): void {
         const el = this.pages[0]
@@ -1328,10 +1458,7 @@ html, body { margin: 0; padding: 0; background: #fff; }
             this.goToPageIdx(cur + dir)
             return
         }
-        // spreads: [1], [2, 3], [4, 5], ... (0-based: [0], [1, 2], [3, 4], ...)
-        const spread = cur === 0 ? 0 : Math.floor((cur + 1) / 2)
-        const target = Math.max(0, spread + dir)
-        this.goToPageIdx(target === 0 ? 0 : 2 * target - 1)
+        this.goToPageIdx(stepSpread(cur, dir, firstPageIsRight(this.score!)))
     }
 
     private updatePageInfo(): void {
@@ -1342,11 +1469,13 @@ html, body { margin: 0; padding: 0; background: #fff; }
         }
         const n = this.pages.length
         const cur = this.currentPageIdx()
-        const partner = this.spreadActive() && cur > 0 ? (cur % 2 === 1 ? cur + 1 : cur - 1) : -1
-        const shown = partner >= 0 && partner < n ? `${Math.min(cur, partner) + 1}–${Math.max(cur, partner) + 1}` : `${cur + 1}`
+        const { left, right } = this.spreadActive() ? spreadPages(cur, firstPageIsRight(this.score)) : { left: cur, right: cur }
+        const first = Math.max(left, 0)
+        const last = Math.min(right, n - 1)
+        const shown = first === last ? `${first + 1}` : `${first + 1}–${last + 1}`
         this.pageInfo.textContent = `${shown} / ${n}`
-        this.btn.prev.disabled = cur <= 0
-        this.btn.next.disabled = Math.max(cur, partner) >= n - 1
+        this.btn.prev.disabled = first <= 0
+        this.btn.next.disabled = last >= n - 1
     }
 
     // ---------------------------------------------------------------------------------
@@ -1590,6 +1719,146 @@ html, body { margin: 0; padding: 0; background: #fff; }
     }
 
     // ---------------------------------------------------------------------------------
+    //   playalong: the controls, the measure followed (editor/playalong/playalongview.ts) and the MIDI settings
+    // ---------------------------------------------------------------------------------
+
+    private togglePlayalong(): void {
+        const playalong = this.playalong
+        if (!playalong) {
+            return
+        }
+        if (playalong.state().active) {
+            playalong.stop()
+            return
+        }
+        // the sound of the playback would be heard by the microphone
+        this.playback?.pause()
+        playalong.start(this.playback?.state().tick ?? 0)
+    }
+
+    private playalongChanged(s: ViewerPlayalongState): void {
+        const btn = this.btn
+        btn.playalong.setAttribute('aria-pressed', String(s.active))
+        btn.playalongPractice.setAttribute('aria-pressed', String(s.practice))
+        this.playalongFollow.hidden = !s.active
+        this.playalongMeasure.textContent = s.number > 0 ? String(s.number) : '–'
+        btn.playalongPrev.disabled = s.index <= 0
+        btn.playalongNext.disabled = s.index < 0 || s.index >= s.count - 1
+        const status = s.status === 'loading' ? 'Starting the note detection…' : s.status === 'error' ? s.error : ''
+        this.playalongStatus.textContent = status
+        this.playalongStatus.hidden = !status
+        this.playalongStatus.classList.toggle('error', s.status === 'error')
+        if (s.status === 'error') {
+            this.setStatus(s.error, true)
+        } else if (s.heard.length) {
+            const names = [...s.heard].sort((a, b) => a - b).map(p => `${NOTE_NAMES[p % 12]}${Math.floor(p / 12) - 1}`)
+            this.setStatus(`Notes heard: ${names.join(' ')}`)
+        }
+        if (s.tick !== this.playalongShownTick) {
+            this.playalongShownTick = s.tick
+            this.updatePlayalongMarker(true)
+        }
+    }
+
+    /** the measure followed is highlighted on its page (in percent of the page like the playback cursor) */
+    private updatePlayalongMarker(scroll: boolean): void {
+        const marker = this.playalongMarker
+        const st = this.playalong?.state()
+        const score = this.score
+        const b = score && st?.active && st.tick >= 0 ? playalongMeasureBounds(score, st.tick) : null
+        const pageEl = b ? this.pages[b.page] : undefined
+        if (!b || !pageEl || !st || !score) {
+            marker.hidden = true
+            return
+        }
+        const size = pageSize(score, b.page)
+        if (marker.parentElement !== pageEl) {
+            pageEl.appendChild(marker)
+        }
+        Object.assign(marker.style, {
+            left: `${b.x / size.width * 100}%`, top: `${b.y / size.height * 100}%`,
+            width: `${b.width / size.width * 100}%`, height: `${b.height / size.height * 100}%`,
+        })
+        marker.hidden = false
+        if (scroll) {
+            // in the practice mode with the measure before it if it is on the same system
+            const p = st.practice && st.prevTick >= 0 ? playalongMeasureBounds(score, st.prevTick) : null
+            const context = p && p.page === b.page && Math.abs(p.y - b.y) < 0.01 && p.x < b.x
+                ? { x: p.x, y: b.y, width: b.x + b.width - p.x, height: b.height } : undefined
+            // the measure played next if it follows on the page (not a jump back)
+            const n = st.nextTick >= 0 ? playalongMeasureBounds(score, st.nextTick) : null
+            const ahead = n && n.page === b.page && (n.y > b.y + 0.01 || (Math.abs(n.y - b.y) < 0.01 && n.x > b.x)) ? n : undefined
+            this.showRectInView(b.page, b, context, ahead)
+        }
+    }
+
+    /**
+     * the editor's showRectInView: the view moves only if the rectangle of a page (inches) or the measure after it would be
+     * cut off, and only in the direction of a continuous view (not under the continuous panel)
+     */
+    private showRectInView(pageIdx: number, r: PageRect, context?: PageRect, ahead?: PageRect, recheck = true): void {
+        const el = this.pages[pageIdx]
+        const score = this.score
+        if (!el || !score) {
+            return
+        }
+        const viewport = this.viewport
+        const mode = this.settings.viewMode
+        const pr = el.getBoundingClientRect()
+        const f = pr.width / pageSize(score, pageIdx).width
+        const vr = viewport.getBoundingClientRect()
+        const margin = 0.2 * f
+        const inset = mode === 'continuous-horizontal' && this.panelBox.isConnected ? this.panelBox.getBoundingClientRect().width : 0
+        const view = { left: vr.left + inset + margin, top: vr.top + margin, right: vr.left + viewport.clientWidth - margin, bottom: vr.top + viewport.clientHeight - margin }
+        const toView = (x: PageRect): { left: number; top: number; right: number; bottom: number } =>
+            ({ left: pr.left + x.x * f, top: pr.top + x.y * f, right: pr.left + (x.x + x.width) * f, bottom: pr.top + (x.y + x.height) * f })
+        const show = toView(r)
+        const next = ahead ? toView(ahead) : null
+        let dx = 0
+        let dy = 0
+        if (mode !== 'continuous-vertical' && (show.left < view.left || show.right > view.right
+            || (next && next.left >= show.left && next.right > view.right && Math.abs(next.top - show.top) < 1))) {
+            const c = context ? toView(context) : null
+            dx = (c && c.right - c.left <= view.right - view.left ? c : show).left - view.left
+        }
+        if (mode !== 'continuous-horizontal' && (show.top < view.top || show.bottom > view.bottom || (next && next.top > show.top && next.bottom > view.bottom))) {
+            dy = show.bottom - show.top <= view.bottom - view.top ? show.top - view.top : show.top - vr.top
+        }
+        if (Math.round(dx) || Math.round(dy)) {
+            this.programmaticScroll++
+            viewport.scrollBy(Math.round(dx), Math.round(dy))
+            requestAnimationFrame(() => { this.programmaticScroll = Math.max(0, this.programmaticScroll - 1) })
+            if (recheck) {
+                // once the panel is drawn for the new position (its width is known then)
+                requestAnimationFrame(() => requestAnimationFrame(() => this.showRectInView(pageIdx, r, context, ahead, false)))
+            }
+        }
+    }
+
+    /** shows the state of the MIDI input in the dialog and the toolbar; the playalong takes the notes from where they are now */
+    private midiChanged(): void {
+        const midi = this.midi
+        if (!midi) {
+            return
+        }
+        const on = midi.isOn()
+        this.midiOn.checked = on
+        this.midiOn.disabled = midi.accessState() === 'unsupported'
+        this.btn.midiSettings.setAttribute('aria-pressed', String(on))
+        const devices = midi.devices()
+        this.midiDevice.replaceChildren(...devices.map((d) => {
+            const o = document.createElement('option')
+            o.value = d.id
+            o.textContent = d.id === NONE_DEVICE_ID ? 'No device' : d.name
+            return o
+        }))
+        this.midiDevice.value = midi.deviceId() || NONE_DEVICE_ID
+        this.midiDevice.disabled = !on
+        this.midiMessage.textContent = midi.settings().enabled || this.midiOn.disabled ? midi.accessProblem() : ''
+        this.playalong?.inputChanged()
+    }
+
+    // ---------------------------------------------------------------------------------
     //   input: wheel, pinch, the hand tool, keys, the toolbar, files
     // ---------------------------------------------------------------------------------
 
@@ -1804,7 +2073,7 @@ html, body { margin: 0; padding: 0; background: #fff; }
             viewport.focus({ preventScroll: true })
         })
         on(btn.print, 'click', () => void this.print())
-        on(btn.center, 'click', () => this.centerPage())
+        on(btn.center, 'click', () => this.centerMeasureOrPage())
         on(btn.fullscreen, 'click', () => this.toggleFullScreen())
         on(btn.help, 'click', () => this.helpDialog.showModal())
         on(this.helpDialog, 'close', () => {
@@ -1820,6 +2089,14 @@ html, body { margin: 0; padding: 0; background: #fff; }
         on(btn.play, 'click', () => this.playback?.togglePlay())
         on(btn.rewind, 'click', () => this.playback?.stop())
         on(this.playPosition, 'input', () => this.playback?.seek(Number(this.playPosition.value)))
+        on(btn.playalong, 'click', () => this.togglePlayalong())
+        on(btn.playalongPrev, 'click', () => this.playalong?.step(-1))
+        on(btn.playalongNext, 'click', () => this.playalong?.step(1))
+        on(btn.playalongPractice, 'click', () => this.playalong?.togglePractice())
+        on(btn.midiSettings, 'click', () => this.midiDialog.showModal())
+        on(this.midiOn, 'change', () => this.midi?.setEnabled(this.midiOn.checked))
+        on(this.midiDevice, 'change', () => this.midi?.selectDevice(this.midiDevice.value))
+        on(this.midiDialog, 'close', () => viewport.focus({ preventScroll: true }))
 
         // space must not activate the focused toolbar button (it is the hand tool / play)
         for (const b of this.toolbar.querySelectorAll('button')) {

@@ -1,6 +1,6 @@
 {
   "name": "muse-encore-viewer",
-  "version": "1.2.1",
+  "version": "1.4.2",
   "description": "Show MuseScore files (.mscz/.mscx) in a web page like an inline PDF viewer: pages, continuous views, zoom, printing, full screen and playback. Based on MuseEncore, a TypeScript port of MuseScore Studio's engraving engine.",
   "license": "GPL-3.0-only",
   "type": "module",
@@ -13,6 +13,7 @@
       "import": "./dist/muse-encore-viewer.js"
     },
     "./fonts/*": "./fonts/*",
+    "./basic-pitch/*": "./basic-pitch/*",
     "./package.json": "./package.json"
   },
   "browser": "./dist/muse-encore-viewer.js",
@@ -21,6 +22,7 @@
   "files": [
     "dist",
     "fonts",
+    "basic-pitch",
     "LICENSE",
     "README.md"
   ],

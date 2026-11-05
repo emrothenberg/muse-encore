@@ -992,6 +992,66 @@ describe.skipIf(!CHROME || !hasSubmodule)('editor', () => {
         await context.close()
     }, 120000)
 
+    it('keeps the two-pages view independent of Two sided and follows the first page number', async () => {
+        const { page, context } = await newPage()
+        await page.goto(`${base}?url=${encodeURIComponent(`${SCORE_HOST}amazing.mscz`)}`)
+        await scoreShown(page)
+        const pageSettings = async (change: () => Promise<void>, button = '.primary'): Promise<void> => {
+            await page.click('.menubar > button:has-text("Format")')
+            await page.click('.menu-popup .menu-item:has-text("Page settings…")')
+            await page.waitForSelector('dialog.page-settings[open]')
+            await change()
+            await page.click(`dialog.page-settings .dialog-buttons ${button}`)
+            await page.waitForSelector('dialog.page-settings', { state: 'detached' })
+        }
+        const twoSided = (on: boolean) => () => page.setChecked('dialog.page-settings label:has-text("Two sided") input', on)
+        const firstNumber = (n: number) => () => page.fill('dialog.page-settings input.page-offset', String(n))
+        const spreads = (): Promise<string[]> => page.evaluate(() => [...document.querySelectorAll('.spread')].map(s =>
+            [...s.children].map(c => c.classList.contains('placeholder') ? '-' : Number((c as HTMLElement).dataset.page) + 1).join(',')))
+        const spreadButton = '[data-action="view-two-pages"]'
+
+        // Two sided changes the margins, not the view
+        await pageSettings(twoSided(false))
+        expect(await spreads()).toEqual([])
+        await pageSettings(twoSided(true))
+        expect(await spreads()).toEqual([])
+        await pageSettings(twoSided(false))
+        expect(await page.isDisabled(spreadButton)).toBe(false)
+        await page.click(spreadButton)
+        expect((await spreads())[0]).toMatch(/^-,1/)
+        await pageSettings(twoSided(true))
+        expect((await spreads())[0]).toMatch(/^-,1/)
+
+        // first page number 2: page 1 is a left-hand page, at once and after undo and redo; Cancel changes nothing
+        await pageSettings(firstNumber(2), 'button:has-text("Cancel")')
+        expect((await spreads())[0]).toMatch(/^-,1/)
+        await pageSettings(firstNumber(2))
+        await page.waitForFunction(() => !document.querySelector('.placeholder'))
+        expect((await spreads())[0]).toMatch(/^1/)
+        await page.focus('#viewport')
+        await page.keyboard.press('ControlOrMeta+z')
+        await page.waitForSelector('.placeholder', { state: 'attached' })
+        await page.keyboard.press('ControlOrMeta+Shift+z')
+        await page.waitForFunction(() => !document.querySelector('.placeholder'))
+
+        // more pages: the pairs and the navigation start with page 1
+        const pages = await page.locator('.page').count()
+        await pageSettings(async () => {
+            const staffSpace = 'dialog.page-settings input[data-name="spatiumEntry"]'
+            await page.fill(staffSpace, String(Number(await page.inputValue(staffSpace)) * 3))
+            await page.press(staffSpace, 'Enter')
+        })
+        await page.waitForFunction(n => document.querySelectorAll('.page').length > n + 2, pages)
+        expect((await spreads()).slice(0, 2)).toEqual(['1,2', '3,4'])
+        await page.waitForFunction(() => /^1–2 \//.test(document.querySelector('.page-info')!.textContent!))
+        await page.focus('#viewport')
+        await page.keyboard.press('ControlOrMeta+PageDown')
+        await page.waitForFunction(() => /^3–4 \//.test(document.querySelector('.page-info')!.textContent!))
+        await page.keyboard.press('ControlOrMeta+PageUp')
+        await page.waitForFunction(() => /^1–2 \//.test(document.querySelector('.page-info')!.textContent!))
+        await context.close()
+    }, 120000)
+
     it('formats the score with Page settings and Measures per system (Format menu, undoable)', async () => {
         const { page, context } = await newPage()
         await page.goto(`${base}?url=${encodeURIComponent(`${SCORE_HOST}amazing.mscz`)}`)
@@ -2222,4 +2282,609 @@ describe.skipIf(!CHROME || !hasSubmodule)('editor', () => {
         expect(Object.keys(unzipSync(new Uint8Array(await read(mxl))))).toContain('META-INF/container.xml')
         await context.close()
     }, 180000)
+
+    // ---------------------------------------------------------------------------------
+    //   no work is lost: autosaves of other scores, the limit of stored scores, other tabs, the microphone
+    // ---------------------------------------------------------------------------------
+
+    /** runs on the raw IndexedDB of the app, given as a function source (it has no access to this module) */
+    const idb = <T>(page: Page, body: string): Promise<T> => page.evaluate(([src]) => new Promise<T>((resolve, reject) => {
+        const req = indexedDB.open('musescoreweb-scores')
+        req.onerror = () => reject(req.error)
+        req.onsuccess = () => {
+            const db = req.result
+            const fn = new Function('db', `return (${src})(db)`) as (db: IDBDatabase) => Promise<T>
+            void fn(db).then((r) => {
+                db.close()
+                resolve(r)
+            }, reject)
+        }
+    }), [body])
+    const autosaveKeys = (page: Page): Promise<string[]> => idb<string[]>(page, `db => new Promise((res) => {
+        const r = db.transaction('autosaves').objectStore('autosaves').getAllKeys(); r.onsuccess = () => res(r.result) })`)
+    const scoreCount = (page: Page): Promise<number> => idb<number>(page, `db => new Promise((res) => {
+        const r = db.transaction('scores').objectStore('scores').count(); r.onsuccess = () => res(r.result) })`)
+    /** stores scores directly; `autosave`: with an autosave */
+    const seedScores = (page: Page, names: readonly string[], autosave = false): Promise<void> => idb<void>(page, `db => new Promise((res, rej) => {
+        const t = db.transaction(['scores', 'contents', 'autosaves'], 'readwrite');
+        ${JSON.stringify(names)}.forEach((name, i) => {
+            t.objectStore('scores').put({ id: name, name: name + '.mscz', title: '', composer: '', source: 'file', size: 0, pages: 1, aspect: 0.7, created: 1, modified: 1, opened: 1000 + i })
+            t.objectStore('contents').put({ id: name, data: new ArrayBuffer(0) })
+            if (${autosave}) t.objectStore('autosaves').put({ id: name, data: new ArrayBuffer(0), time: Date.now() })
+        })
+        t.oncomplete = () => res(); t.onerror = () => rej(t.error)
+    })`)
+    const fastAutosave = (context: BrowserContext): Promise<void> => context.addInitScript(() => {
+        const s = JSON.parse(localStorage.getItem('musescoreweb:settings') ?? '{}') as { project?: Record<string, unknown> }
+        if (s.project?.autoSaveInterval === undefined) {
+            s.project = { ...s.project, autoSaveEnabled: true, autoSaveInterval: 0.02 }
+            localStorage.setItem('musescoreweb:settings', JSON.stringify(s))
+        }
+    })
+    const statusOf = (page: Page): Promise<string> => page.textContent('#status').then(t => t ?? '')
+    /** selects the first note and raises it */
+    const modify = async (page: Page): Promise<string> => {
+        await page.focus('#viewport')
+        await page.keyboard.press('ControlOrMeta+Home')
+        for (let i = 0; i < 8 && !(await statusOf(page)).startsWith('Note'); i++) {
+            await page.keyboard.press('ArrowRight')
+        }
+        const before = await statusOf(page)
+        await page.keyboard.press('ArrowUp')
+        await page.waitForFunction((b) => document.getElementById('status')!.textContent !== b, before)
+        return statusOf(page)
+    }
+    const waitAutosave = async (page: Page, count: number): Promise<void> => {
+        for (let i = 0; i < 100 && (await autosaveKeys(page)).length !== count; i++) {
+            await page.waitForTimeout(100)
+        }
+        expect((await autosaveKeys(page)).length).toBe(count)
+    }
+    const AMAZING = (): string => `${base}?url=${encodeURIComponent(`${SCORE_HOST}amazing.mscz`)}`
+
+    it('the restore question is about one score: Escape removes only its autosave', async () => {
+        const { page, context } = await newPage()
+        await fastAutosave(context)
+        await page.goto(AMAZING())
+        await scoreShown(page)
+        await modify(page)
+        await waitAutosave(page, 1)
+        await seedScores(page, ['other'], true)
+        const amazing = (await autosaveKeys(page)).find(k => k !== 'other')!
+
+        // the open score is asked about; the others stay
+        await page.goto(base)
+        await page.waitForSelector('dialog.restore-session[open]')
+        expect(await page.textContent('.restore-session-name')).toBe('amazing')
+        await page.keyboard.press('Escape')
+        await page.waitForSelector('dialog.restore-session', { state: 'detached' })
+        await page.waitForFunction(() => !document.querySelector('dialog[open]'))
+        await page.waitForTimeout(200)
+        const left = await autosaveKeys(page)
+        expect(left).toEqual(['other'])
+        expect(left).not.toContain(amazing)
+
+        // the next start asks about the other score, "No" removes its autosave
+        await page.reload()
+        await page.waitForSelector('dialog.restore-session[open]')
+        expect(await page.textContent('.restore-session-name')).toBe('other')
+        await page.click('dialog.restore-session button[value="no"]')
+        await waitAutosave(page, 0)
+        await context.close()
+    }, 180000)
+
+    it('opening the file of a score with unsaved changes keeps them as a separate score', async () => {
+        const { page, context } = await newPage()
+        await fastAutosave(context)
+        await page.goto(AMAZING())
+        await scoreShown(page)
+        const raised = await modify(page)
+        await waitAutosave(page, 1)
+
+        await page.goto(AMAZING())
+        await page.waitForFunction(() => document.getElementById('status')?.textContent?.includes('kept as a separate score'), null, { timeout: 120000 })
+        expect(await statusOf(page)).toContain('amazing (unsaved changes)')
+        expect(await page.textContent('#title')).toBe('amazing') // the file, not modified
+        await waitAutosave(page, 1)
+        await page.click('.app-tabs [role="tab"]:has-text("Home")')
+        expect((await cardNames(page)).sort()).toEqual(['amazing', 'amazing (unsaved changes)'])
+
+        // the file again: the entry of the file is reused, the separate score stays
+        await page.goto(AMAZING())
+        await scoreShown(page)
+        await page.click('.app-tabs [role="tab"]:has-text("Home")')
+        expect((await cardNames(page)).sort()).toEqual(['amazing', 'amazing (unsaved changes)'])
+        await waitAutosave(page, 1)
+
+        // the separate score has the changes
+        await page.click('.score-card:not(.new):has(.card-name:text-is("amazing (unsaved changes)"))')
+        await scoreShown(page)
+        expect(await page.textContent('#title')).toBe('*amazing (unsaved changes)')
+        await page.focus('#viewport')
+        await page.keyboard.press('ControlOrMeta+Home')
+        for (let i = 0; i < 8 && !(await statusOf(page)).startsWith('Note'); i++) {
+            await page.keyboard.press('ArrowRight')
+        }
+        expect(await statusOf(page)).toBe(raised)
+        await context.close()
+    }, 240000)
+
+    it('asks which score to delete when more than 500 scores would be stored', async () => {
+        const { page, context } = await newPage()
+        await page.goto(base)
+        await page.waitForSelector('.home')
+        await seedScores(page, Array.from({ length: 500 }, (_, i) => `seed${String(i).padStart(3, '0')}`))
+
+        // Cancel: nothing is deleted, the score is not opened
+        await page.goto(AMAZING())
+        await page.waitForSelector('dialog.remove-score[open]', { timeout: 120000 })
+        expect(await page.locator('.remove-score-list input').count()).toBe(500)
+        expect(await page.locator('.remove-score-name').first().textContent()).toBe('seed000') // least recently opened
+        expect(await page.locator('.remove-score-list input').first().isChecked()).toBe(true)
+        await page.keyboard.press('Escape')
+        await page.waitForSelector('.home')
+        expect(await view(page)).toBe('home')
+        expect(await scoreCount(page)).toBe(500)
+
+        // the score chosen is deleted, the score is opened and stored
+        await page.goto(AMAZING())
+        await page.waitForSelector('dialog.remove-score[open]', { timeout: 120000 })
+        await page.locator('.remove-score-list input').nth(1).check()
+        await page.click('dialog.remove-score button[value="delete"]')
+        await scoreShown(page)
+        await page.waitForFunction(() => !document.querySelector('dialog[open]'))
+        await page.waitForTimeout(300)
+        expect(await scoreCount(page)).toBe(500)
+        const ids = await idb<string[]>(page, `db => new Promise((res) => {
+            const r = db.transaction('scores').objectStore('scores').getAllKeys(); r.onsuccess = () => res(r.result) })`)
+        expect(ids).toContain('seed000')
+        expect(ids).not.toContain('seed001')
+
+        // the same file again needs no room
+        await page.goto(AMAZING())
+        await scoreShown(page)
+        expect(await page.locator('dialog.remove-score').count()).toBe(0)
+        await context.close()
+    }, 240000)
+
+    it('warns about a score open in another tab and leaves its autosave alone', async () => {
+        const { page, context } = await newPage()
+        await fastAutosave(context)
+        await page.goto(AMAZING())
+        await scoreShown(page)
+        await modify(page)
+        await waitAutosave(page, 1)
+
+        // a new tab: the autosave of the first tab is not left over from a crash
+        const tab2 = await context.newPage()
+        tab2.on('dialog', d => void d.accept())
+        await tab2.goto(base)
+        await tab2.waitForSelector('.score-card:not(.new)')
+        await tab2.waitForTimeout(500)
+        expect(await tab2.locator('dialog.restore-session').count()).toBe(0)
+        await waitAutosave(tab2, 1)
+
+        // opening it: the question; "No" keeps the home screen
+        await tab2.click('.score-card:not(.new)')
+        await tab2.waitForSelector('dialog.message-box[open]')
+        expect(await tab2.textContent('#message-box-text')).toContain('already open in another tab')
+        expect(await tab2.textContent('.message-box-detail')).toContain('whichever tab saves last')
+        await tab2.click('dialog.message-box button[value="no"]')
+        await tab2.waitForTimeout(200)
+        expect(await view(tab2)).toBe('home')
+
+        await tab2.click('.score-card:not(.new)')
+        await tab2.click('dialog.message-box button[value="yes"]')
+        await scoreShown(tab2)
+        await tab2.waitForTimeout(300)
+        expect(await tab2.locator('dialog.message-box').count()).toBe(0) // told already
+
+        // entering the first tab: told once
+        await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+        await page.waitForSelector('dialog.message-box[open]')
+        expect(await page.textContent('#message-box-text')).toContain('also open in another tab')
+        await page.click('dialog.message-box button[value="ok"]')
+        await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+        await page.waitForTimeout(300)
+        expect(await page.locator('dialog.message-box').count()).toBe(0)
+
+        // all tabs closed (the locks are released like after a crash): the autosave is restored at the next start
+        await page.close()
+        await tab2.close()
+        const tab3 = await context.newPage()
+        tab3.on('dialog', d => void d.accept())
+        await tab3.goto(base)
+        await tab3.waitForSelector('dialog.restore-session[open]')
+        await context.close()
+    }, 240000)
+
+    describe('microphone of the playalong', () => {
+        let micBrowser: Browser
+
+        beforeAll(async () => {
+            micBrowser = await chromium.launch({
+                executablePath: CHROME, headless: true,
+                args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'],
+            })
+            // the first start imports the detector: with a cold cache the dev server finds its dependencies and reloads
+            // the page, which would lose the state of a test
+            const { page, context } = await micPage(true)
+            const reload = page.waitForEvent('framenavigated', { timeout: 120000 }).then(() => true)
+            await toggle(page)
+            if (await Promise.race([reload, playalongStatus(page, 'listening').then(() => false)])) {
+                await scoreShown(page)
+                await toggle(page)
+                await playalongStatus(page, 'listening')
+            }
+            await context.close()
+        }, 300000)
+
+        afterAll(async () => {
+            await micBrowser?.close()
+        })
+
+        /** records the streams of getUserMedia; `delay`: the time the browser "asks" */
+        async function micPage(granted: boolean, delay = 0): Promise<{ page: Page; context: BrowserContext }> {
+            const context = await micBrowser.newContext({ viewport: { width: 1280, height: 800 } })
+            await presetNoMigration(context)
+            await context.route(`${SCORE_HOST}**`, route => route.fulfill({
+                body: readFileSync(`${DEMOS}/Amazing_grace.mscz`), headers: { 'access-control-allow-origin': '*' },
+            }))
+            if (granted) {
+                await context.grantPermissions(['microphone'], { origin: new URL(base).origin })
+            } else {
+                // the fake UI of the browser answers every request: like a browser that would ask again
+                await context.addInitScript(() => {
+                    const query = navigator.permissions.query.bind(navigator.permissions)
+                    navigator.permissions.query = async (d) => {
+                        const r = await query(d)
+                        return d.name === 'microphone' ? Object.create(r, { state: { value: 'prompt' } }) as PermissionStatus : r
+                    }
+                })
+            }
+            await context.addInitScript((d) => {
+                const w = window as unknown as { __mic: MediaStream[] }
+                w.__mic = []
+                const gum = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices)
+                navigator.mediaDevices.getUserMedia = async (c) => {
+                    await new Promise(r => setTimeout(r, d))
+                    const s = await gum(c)
+                    w.__mic.push(s)
+                    return s
+                }
+            }, delay)
+            const page = await context.newPage()
+            page.on('pageerror', e => { throw e })
+            await page.goto(`${AMAZING()}&synth=none`)
+            await scoreShown(page)
+            return { page, context }
+        }
+        const tracks = (page: Page): Promise<{ state: string; enabled: boolean }[]> => page.evaluate(() =>
+            (window as unknown as { __mic: MediaStream[] }).__mic.flatMap(s => s.getTracks()).map(t => ({ state: t.readyState, enabled: t.enabled })))
+        const playalongStatus = (page: Page, status: string): Promise<unknown> => page.waitForFunction((st) =>
+            (window as unknown as { __museencorePlayalong?: { state: () => { status: string } } }).__museencorePlayalong?.state().status === st, status, { timeout: 120000 })
+        const toggle = (page: Page): Promise<void> => page.click('[data-action="playalong"]')
+
+        it('is closed when switched off if the permission is granted', async () => {
+            const { page, context } = await micPage(true)
+            await toggle(page)
+            await playalongStatus(page, 'listening')
+            expect(await tracks(page)).toEqual([{ state: 'live', enabled: true }])
+            await toggle(page)
+            await playalongStatus(page, 'off')
+            await page.waitForFunction(() => (window as unknown as { __mic: MediaStream[] }).__mic.every(s => s.getTracks().every(t => t.readyState === 'ended')))
+            await context.close()
+        }, 180000)
+
+        it('is closed by default; with the setting it is kept muted if the browser would ask again', async () => {
+            const { page, context } = await micPage(false)
+            const keepSetting = async (): Promise<void> => {
+                await page.click('[data-action="playback-settings"]')
+                await page.locator('.menu-item:has-text("Keep microphone active during session")').click()
+            }
+            await toggle(page)
+            await playalongStatus(page, 'listening')
+            await toggle(page)
+            await playalongStatus(page, 'off')
+            await page.waitForTimeout(300)
+            expect(await tracks(page)).toEqual([{ state: 'ended', enabled: true }])
+
+            await keepSetting()
+            await toggle(page)
+            await playalongStatus(page, 'listening')
+            await toggle(page)
+            await playalongStatus(page, 'off')
+            await page.waitForTimeout(300)
+            expect((await tracks(page))[1]).toEqual({ state: 'live', enabled: false })
+
+            // switched on again: no new request
+            await toggle(page)
+            await playalongStatus(page, 'listening')
+            expect((await tracks(page)).slice(1)).toEqual([{ state: 'live', enabled: true }])
+            await toggle(page)
+            await playalongStatus(page, 'off')
+            await page.waitForTimeout(300)
+            expect((await tracks(page)).slice(1)).toEqual([{ state: 'live', enabled: false }])
+
+            // turning the setting off closes it at once
+            await keepSetting()
+            await page.waitForFunction(() => (window as unknown as { __mic: MediaStream[] }).__mic.every(s => s.getTracks().every(t => t.readyState === 'ended')))
+            await context.close()
+        }, 180000)
+
+        it('is closed if it is switched off while the browser asks for it', async () => {
+            const { page, context } = await micPage(false, 1500)
+            await toggle(page)
+            await playalongStatus(page, 'loading')
+            await toggle(page)
+            await playalongStatus(page, 'off')
+            await page.waitForFunction(() => (window as unknown as { __mic: MediaStream[] }).__mic.length === 1, null, { timeout: 10000 })
+            await page.waitForFunction(() => (window as unknown as { __mic: MediaStream[] }).__mic.every(s => s.getTracks().every(t => t.readyState === 'ended')), null, { timeout: 5000 })
+            await page.waitForTimeout(200)
+            expect((await page.evaluate(() => (window as unknown as { __museencorePlayalong: { state: () => { status: string } } }).__museencorePlayalong.state().status))).toBe('off')
+            await context.close()
+        }, 180000)
+    })
+    describe('MIDI input', () => {
+        interface FakeMidi {
+            __midi: {
+                send(bytes: number[]): void
+                requests: number
+                setPermission(state: string): void
+            }
+            __sv: { currentScore(): {
+                inputState(): { noteEntryMode(): boolean }
+                firstMeasure(): MeasureLike
+                select(e: unknown): void
+            }; scoreChanged(scroll: boolean): void }
+            __museencorePlayback: { synth: { isRunning(): boolean; log: { type: string; a: number; b: number }[]; noteOnCount: number } }
+        }
+        interface MeasureLike {
+            first(): SegmentLike | null
+        }
+        interface SegmentLike {
+            next(): SegmentLike | null
+            element(track: number): { isChord?(): boolean; isRest?(): boolean; notes(): { pitch(): number }[] } | null
+        }
+
+        /** a fake browser API with one device; `permission`: the state the browser reports at the start, or 'none' for no API */
+        async function midiPage(permission: 'granted' | 'prompt' | 'none', url = `${AMAZING()}&synth=none`): Promise<{ page: Page; context: BrowserContext }> {
+            const context = await browser.newContext({ viewport: { width: 1280, height: 800 } })
+            await presetNoMigration(context)
+            await context.route(`${SCORE_HOST}**`, route => route.fulfill({
+                body: readFileSync(`${DEMOS}/Amazing_grace.mscz`), headers: { 'access-control-allow-origin': '*' },
+            }))
+            await context.addInitScript((permission: string) => {
+                if (permission === 'none') {
+                    delete (Navigator.prototype as unknown as { requestMIDIAccess?: unknown }).requestMIDIAccess
+                    return
+                }
+                let state = permission
+                const input = {
+                    id: 'fake', name: 'Fake Keyboard', state: 'connected', onmidimessage: null as ((e: unknown) => void) | null,
+                    open: async () => input, close: async () => input,
+                }
+                const midi = {
+                    requests: 0,
+                    setPermission: (s: string) => { state = s },
+                    send: (bytes: number[]) => input.onmidimessage?.({ data: new Uint8Array(bytes), timeStamp: 0 }),
+                }
+                ;(window as unknown as { __midi: unknown }).__midi = midi
+                navigator.requestMIDIAccess = async () => {
+                    midi.requests++
+                    if (state === 'denied') {
+                        throw new DOMException('denied', 'NotAllowedError')
+                    }
+                    state = 'granted'
+                    return { inputs: new Map([['fake', input]]), outputs: new Map(), onstatechange: null } as unknown as MIDIAccess
+                }
+                const query = navigator.permissions.query.bind(navigator.permissions)
+                navigator.permissions.query = async (d) => {
+                    if (d.name === 'midi') {
+                        return { state, addEventListener: () => {} } as unknown as PermissionStatus
+                    }
+                    return query(d)
+                }
+            }, permission)
+            const page = await context.newPage()
+            page.on('pageerror', e => { throw e })
+            page.on('dialog', d => void d.accept())
+            await page.goto(url)
+            await scoreShown(page)
+            await page.evaluate("import('/scoreview.ts').then((m) => { window.__sv = m })") // a string: not transformed by vitest
+            return { page, context }
+        }
+
+        const selectFirst = (page: Page): Promise<void> => page.evaluate(() => {
+            const sv = (window as unknown as FakeMidi).__sv
+            const score = sv.currentScore()
+            for (let s = score.firstMeasure().first(); s; s = s.next()) {
+                const e = s.element(0)
+                if (e?.isChord?.() || e?.isRest?.()) {
+                    score.select(e.isChord?.() ? e.notes()[0] : e)
+                    sv.scoreChanged(false)
+                    return
+                }
+            }
+        })
+        const send = (page: Page, ...bytes: number[][]): Promise<void> => page.evaluate((b) => {
+            for (const m of b) {
+                (window as unknown as FakeMidi).__midi.send(m)
+            }
+        }, bytes)
+        const noteEntry = (page: Page): Promise<boolean> => page.evaluate(() => (window as unknown as FakeMidi).__sv.currentScore().inputState().noteEntryMode())
+        const firstPitches = (page: Page): Promise<string[]> => page.evaluate(() => {
+            const res: string[] = []
+            for (let s = (window as unknown as FakeMidi).__sv.currentScore().firstMeasure().first(); s; s = s.next()) {
+                const e = s.element(0)
+                if (e?.isChord?.()) {
+                    res.push(e.notes().map(n => n.pitch()).join('+'))
+                } else if (e?.isRest?.()) {
+                    res.push('r')
+                }
+            }
+            return res
+        })
+        const openMidiOn = async (page: Page): Promise<void> => {
+            await page.click('[data-action="playback-settings"]')
+            await page.waitForSelector('[role="menu"]')
+        }
+        const midiOnChecked = async (page: Page): Promise<string | null> => {
+            await openMidiOn(page)
+            const checked = await page.getAttribute('[role="menuitemcheckbox"]:has-text("Enable MIDI input")', 'aria-checked')
+            await page.keyboard.press('Escape')
+            return checked
+        }
+
+        it('does not ask at the start; "Enable MIDI input" asks, then the device works', async () => {
+            const { page, context } = await midiPage('prompt')
+            expect(await page.evaluate(() => (window as unknown as FakeMidi).__midi.requests)).toBe(0)
+            expect(await midiOnChecked(page)).toBe('false')
+            await openMidiOn(page)
+            await page.click('[role="menuitemcheckbox"]:has-text("Enable MIDI input")')
+            await page.waitForFunction(() => (window as unknown as FakeMidi).__midi.requests === 1)
+            expect(await midiOnChecked(page)).toBe('true')
+
+            // the device is connected: a key begins the note input at the selected note
+            await selectFirst(page)
+            await send(page, [0x90, 60, 100])
+            await page.waitForFunction(() => (window as unknown as FakeMidi).__sv.currentScore().inputState().noteEntryMode())
+            await send(page, [0x80, 60, 0])
+            await page.waitForTimeout(100)
+            expect((await firstPitches(page))[0]).toBe('60')
+
+            // off: nothing arrives
+            await openMidiOn(page)
+            await page.click('[role="menuitemcheckbox"]:has-text("Enable MIDI input")')
+            expect(await midiOnChecked(page)).toBe('false')
+            const before = await firstPitches(page)
+            await send(page, [0x90, 62, 100], [0x80, 62, 0])
+            await page.waitForTimeout(100)
+            expect(await firstPitches(page)).toEqual(before)
+            await context.close()
+        }, 180000)
+
+        it('a refused permission and a browser without MIDI are explained', async () => {
+            const refused = await midiPage('prompt')
+            await refused.page.evaluate(() => (window as unknown as FakeMidi).__midi.setPermission('denied'))
+            await openMidiOn(refused.page)
+            await refused.page.click('[role="menuitemcheckbox"]:has-text("Enable MIDI input")')
+            await refused.page.waitForFunction(() => /MIDI/.test(document.getElementById('status')?.textContent ?? ''))
+            expect(await refused.page.textContent('#status')).toContain('Access to MIDI devices is blocked')
+            await refused.context.close()
+
+            const { page, context } = await midiPage('none')
+            await openMidiOn(page)
+            expect(await page.getAttribute('[role="menuitemcheckbox"]:has-text("Enable MIDI input")', 'aria-disabled')).toBe('true')
+            await page.keyboard.press('Escape')
+            await page.evaluate("import('/actions/actions.ts').then((a) => a.triggerAction('preference-dialog'))")
+            await page.click('dialog.preferences li:has-text("Note input")')
+            expect(await page.textContent('.midi-access-hint')).toContain('This browser does not support MIDI devices')
+            expect(await page.isDisabled('dialog.preferences input[type="checkbox"] >> nth=0')).toBe(true)
+            await context.close()
+        }, 180000)
+
+        it('connects without asking if the permission was given; nothing happens behind a dialog or in another tab', async () => {
+            const { page, context } = await midiPage('granted')
+            expect(await midiOnChecked(page)).toBe('true')
+            await page.evaluate("import('/actions/actions.ts').then((a) => a.triggerAction('preference-dialog'))")
+            await page.click('dialog.preferences li:has-text("Audio & MIDI")')
+            expect(await page.$eval('dialog.preferences select', e => (e as HTMLSelectElement).selectedOptions[0].textContent)).toBe('Fake Keyboard')
+
+            await selectFirst(page)
+            await send(page, [0x90, 60, 100], [0x80, 60, 0])
+            await page.waitForTimeout(100)
+            expect(await noteEntry(page)).toBe(false)
+            await page.click('dialog.preferences button[value="ok"]')
+
+            // another tab of the score got the focus
+            await page.evaluate(() => {
+                new BroadcastChannel('musescoreweb:midi-input').postMessage('focused')
+            })
+            await page.waitForTimeout(50)
+            await selectFirst(page)
+            await send(page, [0x90, 60, 100], [0x80, 60, 0])
+            await page.waitForTimeout(100)
+            expect(await noteEntry(page)).toBe(false)
+
+            // back in this tab; a note off goes where its note on went
+            await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+            await send(page, [0x90, 60, 100])
+            await page.waitForTimeout(100)
+            expect(await noteEntry(page)).toBe(true)
+            await page.evaluate(() => new BroadcastChannel('musescoreweb:midi-input').postMessage('focused'))
+            await page.waitForTimeout(50)
+            await send(page, [0x80, 60, 0], [0x90, 62, 100])
+            await page.waitForTimeout(100)
+            expect((await firstPitches(page))[1]).not.toBe('62')
+            await context.close()
+        }, 180000)
+
+        it('a mapped key runs its action and enters no note; the mapping stays after a reload', async () => {
+            const { page, context } = await midiPage('granted')
+            await page.evaluate("import('/actions/actions.ts').then((a) => a.triggerAction('preference-dialog'))")
+            await page.click('dialog.preferences li:has-text("MIDI mappings")')
+            await page.click('tr[data-action="note-input"]')
+            await page.click('.midi-mappings-buttons button >> nth=0')
+            await page.waitForSelector('dialog.edit-midi-mapping[open]')
+            expect(await page.isDisabled('dialog.edit-midi-mapping button[value="add"]')).toBe(true)
+            await send(page, [0xB0, 66, 127])
+            await page.waitForFunction(() => (document.querySelector('dialog.edit-midi-mapping input') as HTMLInputElement).value.includes('Fake Keyboard > CC 66'))
+            await page.click('dialog.edit-midi-mapping button[value="add"]')
+            // only the mapping dialog closes
+            expect(await page.textContent('tr[data-action="note-input"] td:last-child')).toBe('CC 66')
+            await page.click('dialog.preferences button[value="ok"]')
+
+            await page.reload()
+            await scoreShown(page)
+            await page.evaluate("import('/scoreview.ts').then((m) => { window.__sv = m })") // a string: not transformed by vitest
+            await selectFirst(page)
+            await send(page, [0xB0, 66, 127])
+            await page.waitForFunction(() => (window as unknown as FakeMidi).__sv.currentScore().inputState().noteEntryMode())
+            await send(page, [0xB0, 66, 0])
+            await page.waitForTimeout(100)
+            expect(await noteEntry(page)).toBe(true)
+            await context.close()
+        }, 180000)
+
+        it('the real synthesizer: nothing is kept for later before the audio output runs, then the keys sound until released', async () => {
+            const { page, context } = await midiPage('granted', AMAZING())
+            await page.evaluate(() => {
+                const p = (window as unknown as { __museencorePlayback: { synth: { noteOn: (...a: unknown[]) => void; noteOff: (...a: unknown[]) => void; isRunning: () => boolean; __on?: number; __off?: number; __isRunning?: () => boolean } } }).__museencorePlayback
+                const s = p.synth
+                // headless Chrome has no autoplay policy: the output as it is before the first user gesture
+                s.__isRunning = s.isRunning.bind(s)
+                s.isRunning = () => false
+                s.__on = 0
+                s.__off = 0
+                const on = s.noteOn.bind(s)
+                const off = s.noteOff.bind(s)
+                s.noteOn = (...a) => { s.__on!++; on(...a) }
+                s.noteOff = (...a) => { s.__off!++; off(...a) }
+            })
+            const counts = (): Promise<number[]> => page.evaluate(() => {
+                const s = (window as unknown as { __museencorePlayback: { synth: { __on: number; __off: number } } }).__museencorePlayback.synth
+                return [s.__on, s.__off]
+            })
+            // before a user gesture (a preview only; no selection): after loading the sounds it is dropped
+            await send(page, [0x90, 60, 100])
+            await page.waitForFunction(() => (window as unknown as { __museencorePlayback: { synth: { isLoaded(): boolean } } }).__museencorePlayback.synth.isLoaded(), null, { timeout: 120000 })
+            await page.waitForTimeout(200)
+            await send(page, [0x80, 60, 0])
+            await page.waitForTimeout(200)
+            expect(await counts()).toEqual([0, 0])
+
+            await page.evaluate(() => {
+                const s = (window as unknown as { __museencorePlayback: { synth: { isRunning: () => boolean; __isRunning: () => boolean } } }).__museencorePlayback.synth
+                s.isRunning = s.__isRunning
+            })
+            await page.waitForFunction(() => (window as unknown as FakeMidi).__museencorePlayback.synth.isRunning(), null, { timeout: 60000 })
+            await send(page, [0x90, 64, 100])
+            await page.waitForFunction(() => (window as unknown as { __museencorePlayback: { synth: { __on: number } } }).__museencorePlayback.synth.__on === 1, null, { timeout: 120000 })
+            expect((await counts())[1]).toBe(0) // until the release
+            await send(page, [0x80, 64, 0])
+            await page.waitForFunction(() => (window as unknown as { __museencorePlayback: { synth: { __off: number } } }).__museencorePlayback.synth.__off === 1)
+            await context.close()
+        }, 300000)
+    })
 })

@@ -33,12 +33,13 @@
       import applyMuseEncoreViewer from "../dist/muse-encore-viewer.js?{timestamp}";
 
       const url =
-        new URLSearchParams(location.search).get("url") ?? "score.mscz";
+        new URLSearchParams(location.search).get("url") ?? "bei_gezeiten.mscz";
       const options = [
-        { disableToolbar: true },
+        { disableToolbar: true, colorScheme: "light" },
         {
           continuousView: "window-fit",
           disableToolbar: true,
+          colorScheme: "light",
         },
         {
           continuousView: "horizontal",
@@ -50,6 +51,7 @@
           },
           showStatusBar: true,
           keyboardShortcuts: true,
+          colorScheme: "light",
         },
       ];
       options.forEach((option) => {

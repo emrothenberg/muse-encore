@@ -8,6 +8,8 @@
  */
 
 import { EditStyle } from './notationscene/editstyle'
+import { ScoreRangeUtilities } from './notation/utilities/scorerangeutilities'
+import { playalongMeasureBounds } from './playalong/api'
 import { CanvasPaintProvider, type Canvas2D } from './framework/draw/canvaspaintprovider'
 import { Painter } from './framework/draw/painter'
 import { Transform } from './framework/draw/types/transform'
@@ -27,6 +29,7 @@ import { ScoreOrder } from './engraving/dom/scoreorder'
 import {
     TraitType, instrumentGenres as engravingInstrumentGenres, instrumentGroups, instrumentOrders, searchTemplate,
 } from './engraving/dom/instrtemplate'
+import type { MidiEvent } from './framework/midi/midievent'
 import { NotationProject, ProjectCreateOptions } from './project/internal/notationproject'
 import { Sid } from './engraving/style/styledef'
 import { fontProvider } from './engraving/infrastructure/engravingcontext'
@@ -35,6 +38,8 @@ import { createNotationReadersRegister } from './importexport/readers'
 import { NotationReadError, type NotationReaderInteractive, type NotationReaderOptions } from './project/inotationreader'
 import { defaultMusicXmlImportSettings, musicXmlImportConfiguration, type MusicXmlImportSettings } from './importexport/musicxml/internal/musicxmlconfiguration'
 import { defaultMidiImportSettings, midiImportConfiguration, type MidiImportSettings } from './importexport/midi/internal/midiconfiguration'
+import { NotationRuler } from './notationscene/notationruler'
+import { NotationConfiguration } from './notation/internal/notationconfiguration'
 import { SelectDialog, SelectNoteDialog } from './notationscene/selectdialog'
 import { NoteSpellingType } from './engraving/types/types'
 import type { Harmony } from './engraving/dom/harmony'
@@ -140,6 +145,13 @@ export * from './inspector/api'
 export * from './notationscene/styledialog/api'
 // playback: MIDI events, positions/times, playback cursor, loop markers
 export * from './playback/api'
+export { MidiEvent, Opcode } from './framework/midi/midievent'
+export { NONE_DEVICE_ID, type MidiDevice, type MidiDeviceID } from './framework/midi/miditypes'
+export { WebMidiInPort, type MidiAccessState, type MidiNavigator } from './framework/midi/internal/platform/web/webmidiinport'
+export { ALL_MIDI_ACTIONS, MidiRemote, RemoteEventType, isValidRemoteEvent, noRemoteEvent, remoteEventFromMidiEvent, type MidiControlsMapping, type RemoteEvent } from './framework/midiremote/midiremote'
+export { setMidiInputConfiguration, type MidiInputConfiguration } from './notation/internal/notationmidiinput'
+export { NotationConfiguration } from './notation/internal/notationconfiguration'
+export { NoteEntryMethod } from './engraving/dom/input'
 export * from './playalong/api'
 export {
     setFallbackFontEngine, createCanvasFallbackFontEngine, type FallbackFontEngine, type FallbackFont,
@@ -429,6 +441,11 @@ export function isTwoSided(score: Score): boolean {
     return score.style().styleB(Sid.pageTwosided)
 }
 
+/** true if the first page has an odd number (Page::isOdd with the first page number), which makes it a right-hand page */
+export function firstPageIsRight(score: Score): boolean {
+    return ((1 + score.pageNumberOffset()) & 1) !== 0
+}
+
 /** score title (metaTag "workTitle" or the first title text), empty if none */
 export function scoreTitle(score: Score): string {
     return score.metaTag('workTitle') || ''
@@ -559,7 +576,17 @@ function drawSelectionRange(score: Score, pageIdx: number, painter: Painter, sca
         notationState(score).interaction.drawSelectionRange(painter, scaling)
     }
     if (noteInputCursorPage(score) === pageIdx) {
-        drawNoteInputCursor(score, painter)
+        // C++ AbstractNotationPaintView::paint
+        const interaction = notationState(score).interaction
+        const noteInput = interaction.noteInput()
+        if (interaction.shouldDrawInputPreview()) {
+            interaction.drawInputPreview(painter, { isPrinting: false })
+        }
+        if (noteInput.usingNoteInputMethod(NoteEntryMethod.BY_DURATION) && !NotationConfiguration.useNoteInputCursorInInputByDuration()) {
+            NotationRuler.paint(painter, noteInput.state())
+        } else {
+            drawNoteInputCursor(score, painter)
+        }
     }
     drawEditMode(score, page, painter, scaling)
     painter.translate(pagePos)
@@ -1135,6 +1162,45 @@ export function selectionBounds(score: Score): { page: number; x: number; y: num
     return res
 }
 
+/** The page and rectangle (inches from the page's top left) of the first measure, like the frame of its range selection. */
+export function firstMeasureBounds(score: Score): { page: number; x: number; y: number; width: number; height: number } | null {
+    const m = score.firstMeasureMM()
+    if (!m) {
+        return null
+    }
+    const frame = ScoreRangeUtilities.boundingArea(score, m.firstEnabled(), m.last(), 0, score.nstaves())[0]
+    const page = frame ? notationState(score).interaction.point2page(frame.center(), true) : null
+    if (!page) {
+        return null
+    }
+    const r = frame.translated(page.pos().times(-1))
+    return { page: score.pages().indexOf(page), x: r.x() / DPI, y: r.y() / DPI, width: r.width() / DPI, height: r.height() / DPI }
+}
+
+/**
+ * The measure the center button shows (page, inches from the page's top left): the one being played, the selection (the
+ * rectangles on the page of its first one), the measure of the paused play position, or the first measure.
+ */
+export function centerTargetBounds(score: Score, playback?: { playing: boolean; tick: number } | null): { page: number; x: number; y: number; width: number; height: number } | null {
+    if (playback?.playing) {
+        const played = playalongMeasureBounds(score, playback.tick)
+        if (played) {
+            return played
+        }
+    }
+    const rects = selectionBounds(score)
+    if (rects.length) {
+        const page = rects[0].page
+        const onPage = rects.filter(r => r.page === page)
+        const x = Math.min(...onPage.map(r => r.x))
+        const y = Math.min(...onPage.map(r => r.y))
+        const right = Math.max(...onPage.map(r => r.x + r.width))
+        const bottom = Math.max(...onPage.map(r => r.y + r.height))
+        return { page, x, y, width: right - x, height: bottom - y }
+    }
+    return (playback?.tick ? playalongMeasureBounds(score, playback.tick) : null) ?? firstMeasureBounds(score)
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 //   editing (MuseScore's NotationActionController, NotationInteraction, NotationUndoStack)
 // ---------------------------------------------------------------------------------------------------------------------
@@ -1150,9 +1216,16 @@ export function executeAction(score: Score, code: string): boolean {
 }
 
 /**
- * MIDI note input (NotationMidiInput, note-on events): enters pitches played together at the note input position (the
- * editor enters the notes detected from the microphone with it); true if the note input changed (a new chord, or
- * the pitches of the input by duration)
+ * the event of a MIDI device for the score (C++ notation->midiInput()->onMidiEventReceived): it enters notes, starts
+ * the note input or only sounds, depending on the state of the note input
+ */
+export function midiEventReceived(score: Score, event: MidiEvent): void {
+    notationState(score).actions.midiInput().onMidiEventReceived(event)
+}
+
+/**
+ * enters pitches played together at the note input position (the editor enters the notes detected from the
+ * microphone with it); true if the note input changed (a new chord, or the pitches of the input by duration)
  */
 export function enterMidiNotes(score: Score, pitches: readonly number[]): boolean {
     const actions = notationState(score).actions

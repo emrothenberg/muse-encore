@@ -2803,8 +2803,7 @@ declare module '../dom/score' {
     interface Score {
         /**
          * advances the real-time input by one input duration (the "realtime-advance" action of the real-time note
-         * input methods). TODO(port): MIDI input: activeMidiPitches() is always empty (no MIDI in the browser), so
-         * the new position always gets a rest; allowTransposition is unused.
+         * input methods); the keys still held are tied to the previous chord.
          */
         realtimeAdvance(allowTransposition: boolean): void
         /**
@@ -2818,7 +2817,7 @@ declare module '../dom/score' {
     }
 }
 
-Score.prototype.realtimeAdvance = function (this: Score, _allowTransposition: boolean): void {
+Score.prototype.realtimeAdvance = function (this: Score, allowTransposition: boolean): void {
     const is = this.inputState()
     if (!is.noteEntryMode()) {
         return
@@ -2839,8 +2838,17 @@ Score.prototype.realtimeAdvance = function (this: Score, _allowTransposition: bo
 
     is.moveToNextInputPos()
 
-    // C++: the active MIDI pitches are tied to the previous chord (addTiedMidiPitch); there is no MIDI input here
-    this.setNoteRest(is.segment()!, is.track(), new NoteVal(), is.duration().fraction(), DirectionV.AUTO)
+    const midiPitches = this.activeMidiPitches()
+    if (!midiPitches.length) {
+        this.setNoteRest(is.segment()!, is.track(), new NoteVal(), is.duration().fraction(), DirectionV.AUTO)
+    } else {
+        const prevChord = prevCR.isChord() ? prevCR as unknown as Chord : null
+        let partOfChord = false
+        for (const ev of midiPitches) {
+            this.addTiedMidiPitch(ev.pitch, partOfChord, prevChord, allowTransposition)
+            partOfChord = true
+        }
+    }
 
     if (prevCR.measure() !== is.segment()!.measure()) {
         // just advanced across barline. Now simplify tied notes.

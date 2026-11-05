@@ -1763,3 +1763,88 @@
   filter level "Calibrated". Checked headless with the test melody (steps, skip, saving); not with a real piano.
   The calibration sheet is opened like a file, so it appears in the home screen's score list.
 
+
+## Keeping the user's work (after the audit)
+
+- Stored scores: the limit is 500 (`MAX_SCORES`); nothing is deleted silently any more. For one more score the "Too many
+  scores are stored" dialog (App.tsx RemoveScoreDialog, session.ts ensureRoomForScore) lets the user choose the score to
+  delete (least recently opened first, without the open score and scores open in other tabs); Cancel does not open the
+  new score, or leaves a save unsaved.
+- Restore question: it names one score; "No" or Escape removes only that score's autosave (MuseScore removes all of them).
+  The other autosaves stay: they are restored when these scores are opened and asked about at the next start.
+- Opening the file of a score with unsaved changes (also `?url=`): the file opens as its own score; the earlier score keeps
+  its autosave as "<name> (unsaved changes)", without hash and file handle (db.ts separateFromFile), so it is neither
+  found by the content nor written to the file.
+- Other tabs (editor/tabs.ts, not in MuseScore): a tab holds a shared Web Lock while a score is open (released by the
+  browser after a crash, held while a tab is frozen). Opening a score open elsewhere asks; entering a tab (focus,
+  visibility, Score page) whose score was opened elsewhere tells once. Autosaves of scores open elsewhere are not offered
+  for restoring and not removed. No locks (insecure context): no warnings.
+- Microphone (shared/notedetection/microphone.ts): a stop while the browser asks for it closes the stream that arrives
+  afterwards (it stayed on before). Closing it can make the browser ask again (Firefox, also with the state "granted", which includes
+  one-time permissions; state "prompt"): there "Keep microphone active during session" (Playback settings, default off for privacy,
+  settings.playback.playalongKeepMicrophone) keeps it open with disabled tracks until the tab is closed. With a permanent
+  permission it is always closed. Checked in headless Chrome with a fake device (the "ask again" state is simulated); not
+  in Firefox or Safari. The new strings' translations are unreviewed machine translations.
+- Tests: test/microphone.test.ts, editor.e2e.ts ("the restore question…", "opening the file…", "asks which score…",
+  "warns about a score…", "microphone of the playalong").
+- Editor toolbar: the center button (action code still `view-center-page`, now titled "Center measure") centers the selection
+  or, without one, the first measure (firstMeasureBounds: the whole measure with its header, on all staves) instead of
+  the page; new SVG icon carbon:center-to-fit (SVG_ICONS in ToolBars.tsx). The viewer keeps "Center page" (it has no selection).
+  The new strings' translations are unreviewed machine translations.
+- Viewer package: option `colorScheme` ('auto' = the browser's, also for any other value; 'light', 'dark') replaces `theme`, which is removed (breaking for embeds using it). The examples with options use colorScheme: 'light'.
+- Viewer: the center button ("Center page") has the editor's icon carbon:center-to-fit, defined once in shared/icons.ts. Compared the viewer's other icons with the editor's: all equal.
+- Center button: one implementation for the editor and the viewer, both titled "Center measure" (action `view-center-page`). `centerTargetBounds` (src/index.ts) picks the measure: being played, the selection (none in the viewer), the paused position, the first measure; `centerViewOnMeasureOrPage` (shared/centerview.ts) centers it or, if the page fits into the view in width and height, the page with it (a spread, if it fits too). Before, the viewer always centered the current page.
+
+
+## MIDI input
+
+- Library: framework/midi (MidiEvent, WebMidiInPort: Web MIDI instead of CoreMIDI/ALSA/WinMM), framework/midiremote (MidiRemote), complete port of
+  NotationMidiInput (queue with 20 ms batches, note on/off, active pitches, shift adds to the chord, written/sounding pitch, input by duration with held keys,
+  real-time modes with ties over the advance, note extension timer, metronome on/off, 100 ms between tick and advance like C++, preview outside of note input,
+  velocity and duration, sustain/modulation/pitch bend), Score.activeMidiPitches, addTiedMidiPitch, realtimeAdvance with the held keys. onNoteOns stays for the microphone.
+- Editor: editor/midi/midicontroller.ts (MidiInputOutputController); UI as in MuseScore: Playback settings "Enable MIDI input" (midi-on) and "MIDI input pitch"; Preferences
+  "Note input" (MIDI devices section, Play MIDI input, velocity and duration), "Audio & MIDI" (MIDI input), "MIDI mappings" with the assign dialog.
+- Differences that the browser requires: permission (asked by "Enable MIDI input", silently connected if given before; midi-on is checked only with access); Safari has no Web MIDI
+  (explained, action disabled); several tabs get the events: only the visible, last focused tab takes them (note offs follow their note on); a MIDI event is no user gesture, so before the
+  first gesture of the page there is no sound and the notes are not queued (Synthesizer.isRunning); device changes come from statechange (no polling), a device plugged in later is connected if none was chosen;
+  a stored device is also found by its name (ids can change).
+- Deliberate differences from C++: nothing happens behind an open dialog or during the playalong; assigning a mapping does not also enter notes; "MIDI remote control" off really disables the mappings (C++ only disables the list).
+- Not ported: MIDI output and "Produce MIDI 2.0 output" (the sound goes to the browser's synthesizer; only MIDI 1.0 input), MMC (needs the sysex permission), multi-selection and the Reset of the mappings page.
+- Tests: test/midiinput.test.ts (fake device), editor.e2e.ts "MIDI input" (fake API in the browser). Checked once in real headless Chrome with a virtual CoreMIDI source (Swift script: notes, chords, note on with velocity 0, preferences, assigning a mapping, playback by a mapped key). Not checked with a physical device, in Firefox or with audible sound. The two new strings' translations are unreviewed machine translations.
+
+## 2026-11-04 — Input by duration: ruler and preview
+
+- The mode's logic was already ported (note-input-by-duration, padNote, setInputNote, moveInputNotes, MIDI). New:
+  notationscene/notationruler.ts (C++ NotationRuler, the cursor above the staff) and NotationInteraction
+  previewNotes/shouldDrawInputPreview/drawInputPreview (the notes of the next input, painted in drawSelectionRange of
+  index.ts; never printed).
+- Preference "Input by duration mode cursor" (Above staff/On staff).
+- Also "Default input mode" and "Apply accidentals, augmentation dots, and articulations": the whole NoteInputSection.qml.
+  notation/internal/notationconfiguration.ts holds the three preferences; the editor sets them from settings.noteInput.
+  The merged method button of the toolbar (port only) shows the default mode outside of note input.
+- Known limits: NoteInputCursor's TAB string marks are still missing; the ruler was only checked against the C++ source
+  and in the port's editor (mscore's command line does not render note input).
+- tools/bump-version.ts: MuseEncore and muse-encore-viewer always get the same version (one version argument; the viewer's argument, its question and `-` are removed).
+
+## Viewer: Playalong and MIDI settings
+
+- Option `toolbarGroups.playalong` (default false) of the viewer component: the Playalong button with the measure buttons, the practice mode and the
+  highlight of the measure (viewer/src/playalong.ts, on shared/playalong/follower.ts, moved from editor/playalong), and the MIDI settings dialog (Enable MIDI input, device; viewer/src/midiinput.ts on
+  WebMidiInPort, asking for the access only by "Enable MIDI input"). Settings in localStorage `musescoreweb:viewer-playalong`. Turned on in the viewer app (viewer/main.ts) and in the third viewer of packages/viewer/example/index.html; embedded viewers have to ask for it.
+- New compared to the editor: the viewer's playalong also follows a MIDI device; with the input on and a device connected, the microphone stays off. The editor's playalong still only listens to the microphone.
+- The package now has basic-pitch/ (the model; option `noteDetectionUrl`). The detector's worker is created through a blob: import when its script is on another origin (a CDN), and a worker that cannot be loaded now rejects the start instead of hanging.
+- Not in the viewer: calibration, overtone filter menu, keep microphone, MIDI input pitch, MIDI mappings, selection of the parts followed, Up/Down keys.
+- Tests: webapps.e2e.ts (fake MIDI device). Checked once with the built package from another origin and Chrome's fake microphone playing a WAV of tones ("Notes heard: A4"). Not checked with a physical MIDI device, a real microphone or on jsDelivr itself.
+- The package's example now shows packages/viewer/example/bei_gezeiten.mscz (in the repository, by the project's owner) instead of a copy of Amazing_grace.mscz made by the Pages workflow.
+
+## Two-pages view independent of Two sided
+
+- The Two pages button of the editor and viewer works for every score: it is a view of ours, not in MuseScore, where pageTwosided only selects the even page margins. The setting no longer enables the view, and files do not choose it.
+- The sides follow Page::isOdd with the first page number (firstPageIsRight in src/index.ts, shared/spreads.ts for the pairs and the navigation): with first page number 2, the pairs are [1, 2], [3, 4].
+- The editor rebuilds the pages when the first page number changes the pairs (page settings, undo, redo).
+- isTwoSided stays in the library's API but the apps no longer use it.
+- The package's example page (packages/viewer/example/index.html) shows the full JavaScript of each example above its score, highlighted with highlight.js (CDN, theme idea). The code is in one place: `<script type="text/plain" class="example">` blocks, which the page displays and runs (inline module scripts would be emptied by Vite's dev server). `?url=` still works, through the global `urlToMuseScoreFile`; `window.viewers` is gone.
+- The package's example page ends with a configurator: a form generated from a table of the options (view, viewer, toolbarGroups; not the URLs and callbacks); every change creates the viewer again and shows the code with the options that differ from the defaults.
+- The example page shows code only in the configurator: the first three viewers no longer show theirs, so one module script runs them all (no more text/plain blocks). Each label of the configurator is in a section.
+- The example page has an overview of its sections at the left side from 1200px width on; the title of the section with the most pixels in the window is bold.
+- The configurator of the example page has a "Reset to defaults" button (a native form reset).

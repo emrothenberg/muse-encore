@@ -11,6 +11,11 @@ engraving engine (reference version 4.7.5). Everything runs in the browser; no s
 > **MuseEncore is neither an official MuseScore project nor a fork of MuseScore.** It is an independent
 > port of MuseScore Studio's open source code and is not affiliated with or endorsed by MuseScore Limited or the
 > MuseScore project. "MuseScore" is used here only to name the original software this project is based on.
+>
+> **About the name:** "MuseEncore" combines two music terms, "muse" and "encore", which, to the author's understanding,
+> are not protected as general terms. Should you nevertheless have (legal) concerns about the name, please first reach
+> out to the author at [philipp.staender@gmail.com](mailto:philipp.staender@gmail.com), so that the project can be
+> renamed.
 
 ## Usage
 
@@ -53,11 +58,11 @@ const viewer = applyMuseEncoreViewer(targetElement, pathToMuseScoreFile, {
     zoom: 'whole-page',           // or 'page-width' or a percentage (100 with centerAndResizeToPage: false)
     continuousView: false,        // 'horizontal', 'vertical', 'window-fit'; false: the page view
     pageOrientation: 'horizontal',// the pages of the page view side by side, or 'vertical'
-    twoPages: false,              // facing pages (scores with a two-sided page layout)
+    twoPages: false,              // facing pages, odd page numbers on the right
     toolbarGroups: {
         pageNavigation: true,     // previous / next page, page indicator
         pageView: true,           // view mode (page / continuous views) and page layout
-        zoom: true,               // zoom in / out, zoom levels, center page
+        zoom: true,               // zoom in / out, zoom levels, center measure
         playback: false,          // play / pause, rewind, play position
         print: true,              // print button
         fullScreen: true,         // full screen button
@@ -66,7 +71,7 @@ const viewer = applyMuseEncoreViewer(targetElement, pathToMuseScoreFile, {
     keyboardShortcuts: false,     // MuseScore's shortcuts while the viewer has the focus, and the "?" button
     disableToolbar: false,        // no toolbar at all
     showStatusBar: false,         // the status bar below the score
-    theme: 'auto',                // 'light', 'dark'
+    colorScheme: 'auto',          // 'light', 'dark'; auto: the browser's
     fontsUrl: undefined,          // the fonts directory; default: this package's fonts/ next to dist/
     soundFontUrl: undefined,      // MS Basic.sf3; default: MuseScore's repository (see Playback)
     onLoad: (info) => {},         // { fileName, title, pageCount }
@@ -106,6 +111,16 @@ The playback uses MuseScore's MIDI renderer and MuseScore's soundfont "MS Basic.
 playback and kept in the browser's Cache Storage. By default it is loaded from MuseScore's repository at the
 reference version (raw.githubusercontent.com); set `soundFontUrl` to serve it yourself.
 
+## Playalong and MIDI input
+
+With `toolbarGroups: { playalong: true }` the toolbar has the Playalong button: it follows the score measure by measure
+while the user plays, and highlights the measure. It starts at the paused play position. The notes come from a MIDI
+device if the MIDI input is on (the MIDI settings button: "Enable MIDI input", the device; the browser asks for
+permission, Safari has no Web MIDI) and otherwise from the microphone (Spotify's
+[basic-pitch](https://github.com/spotify/basic-pitch), Apache-2.0, running in a Web Worker). The model and the
+detection are loaded on the first start. The model is in `basic-pitch/` next to `dist/`; if you copy only the module,
+copy it too and set `noteDetectionUrl`. The browser needs a secure context (HTTPS) for the microphone and for MIDI.
+
 ## Fonts
 
 The engraving fonts (Leland, Bravura, Edwin, ... with their licenses) are in `fonts/` and loaded at runtime from the
@@ -120,5 +135,5 @@ GPL-3.0-only, like MuseScore Studio. The fonts have their own licenses (see `fon
 
 In the repository: `npm run build:viewer-package` builds this package into `packages/viewer` (the module, its
 type declarations, the fonts and the license); then `npm publish` there. `packages/viewer/example/` shows a few
-viewers on a page (`npx vite packages/viewer`, then open `/example/?url=<score>`); it is online at
+viewers on a page and a configurator of the options (`npx vite packages/viewer`, then open `/example/?url=<score>`); it is online at
 [pstaender.github.io/muse-encore/viewer-package/example/](https://pstaender.github.io/muse-encore/viewer-package/example/).

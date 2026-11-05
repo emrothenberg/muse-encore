@@ -3,7 +3,7 @@
 // status bar text, drawing in the selection colors.
 import { beforeAll, describe, expect, it } from 'vitest'
 import {
-    clearSelection, createScore, defaultNewScoreOptions, drawPageSvg, hasSelection, hitTest, moveSelection, selectAll,
+    clearSelection, centerTargetBounds, createScore, defaultNewScoreOptions, drawPageSvg, firstMeasureBounds, hasSelection, hitTest, moveSelection, selectAll,
     selectAt, selectionBounds, selectionInfo, setTranslator, type MasterScore,
 } from '../src/index'
 import { DPI } from '../src/engraving/types/types'
@@ -86,6 +86,45 @@ describe('selection in a new score', () => {
         const bounds = selectionBounds(score)
         expect(bounds.length).toBeGreaterThan(1)
         expect(bounds.every(b => b.page === 0 && b.width > 0 && b.height > 0)).toBe(true)
+    })
+
+    it('the bounds of the first measure are the frame of its selection on all staves', () => {
+        clearSelection(score)
+        const m1 = score.firstMeasure()!
+        const top = measurePoint(m1)
+        const bottom = measurePoint(m1, 1)
+        selectAt(score, 0, top.x, top.y, 'single')
+        selectAt(score, 0, bottom.x, bottom.y, 'range')
+        const frame = selectionBounds(score)[0]
+        clearSelection(score)
+
+        const b = firstMeasureBounds(score)!
+        const margin = 0.03 // of the selection frame's pen
+        expect(b.page).toBe(0)
+        // from the measure's beginning: with the clef and time signature, which the frame starts after
+        expect(b.x).toBeCloseTo(m1.pagePos().x() / DPI, 5)
+        expect(b.x).toBeLessThan(frame.x)
+        expect(b.x + b.width).toBeCloseTo(frame.x + frame.width - margin, 5)
+        expect(b.y).toBeCloseTo(frame.y + margin, 5)
+        expect(b.height).toBeCloseTo(frame.height - 2 * margin, 5)
+    })
+
+    it('the center button shows the measure played, the selection, the paused position or the first measure', () => {
+        clearSelection(score)
+        const first = firstMeasureBounds(score)!
+        const m2 = score.firstMeasure()!.nextMeasure()!
+        const m3 = m2.nextMeasure()!
+        const at = (m: Measure) => m.pagePos().x() / DPI
+        expect(centerTargetBounds(score)).toEqual(first)
+        expect(centerTargetBounds(score, { playing: false, tick: 0 })).toEqual(first)
+        expect(centerTargetBounds(score, { playing: false, tick: m2.tick().ticks() })!.x).toBeCloseTo(at(m2), 5)
+
+        const p = measurePoint(m3)
+        selectAt(score, 0, p.x, p.y, 'single')
+        const sel = selectionBounds(score)[0]
+        expect(centerTargetBounds(score, { playing: false, tick: m2.tick().ticks() })).toEqual(sel)
+        expect(centerTargetBounds(score, { playing: true, tick: m2.tick().ticks() })!.x).toBeCloseTo(at(m2), 5)
+        clearSelection(score)
     })
 
     it('clicking outside of the staves deselects; Escape and Ctrl+A', () => {

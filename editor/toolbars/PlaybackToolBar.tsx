@@ -52,10 +52,18 @@ function MuteButton(): React.JSX.Element {
 }
 
 /**
- * the "Playback settings" menu: PlaybackUiActions::settingsActions, the overtone filter of the playalong (not in
+ * the "Playback settings" menu: PlaybackUiActions::midiInputActions, the MIDI input pitch, settingsActions, the overtone filter of the playalong (not in
  * MuseScore) and (docked) the loop boundary actions
  */
 const SETTINGS_ITEMS: MenuItem[] = [
+    { kind: 'action', code: 'midi-on' },
+    {
+        kind: 'menu', id: 'midi-input-pitch', title: ['notation', 'MIDI input pitch'], items: [
+            { kind: 'action', code: 'midi-input-written-pitch' },
+            { kind: 'action', code: 'midi-input-sounding-pitch' },
+        ],
+    },
+    { kind: 'separator' },
     { kind: 'action', code: 'repeat' },
     { kind: 'action', code: 'play-chord-symbols' },
     { kind: 'action', code: 'toggle-hear-playback-when-editing' },
@@ -73,6 +81,7 @@ const SETTINGS_ITEMS: MenuItem[] = [
             { kind: 'action', code: 'playalong-calibrate' },
         ],
     },
+    { kind: 'action', code: 'playalong-keep-microphone' },
     { kind: 'separator' },
     { kind: 'action', code: 'loop-in' },
     { kind: 'action', code: 'loop-out' },

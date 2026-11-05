@@ -3,7 +3,7 @@
  * The app frame (like MuseScore's main window): menu bar, the tabs "Home" and "Score" with the main toolbars,
  * the toolbar rows, the home screen or the score (with its tab), the status bar and the dialogs.
  */
-import { useEffect, useLayoutEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { actionsChanged, registerAction, useActions } from './actions/actions'
 import { clearRecentScores } from './actions/appactions'
 import { ConcertPitchControl } from './components/ConcertPitchControl'
@@ -33,9 +33,10 @@ import { ExportDialogHost } from './dialogs/ExportDialog'
 import { ScoreContextMenuHost } from './components/ScoreContextMenu'
 import { PreferencesDialog } from './dialogs/PreferencesDialog'
 import { SaveScoreDialog } from './dialogs/SaveScoreDialog'
-import { useScores } from './db'
+import { MAX_SCORES, useScores, type ScoreEntry } from './db'
+import { baseName } from './files'
 import { ScoresPage } from './home/ScoresPage'
-import { qtrc, useLanguage } from './i18n'
+import { arg, qtrc, useLanguage, webtr } from './i18n'
 import { appMenu, setRecentScoresProvider, type MenuItem } from './menus/appmenu'
 import { NewScoreDialog } from './newscore/NewScoreDialog'
 import { PanelDock } from './panels/PanelDock'
@@ -75,7 +76,7 @@ function SaveChangesDialog({ onClose }: { onClose: (answer: unknown) => void }):
 }
 
 /** StartupScenario::restoreLastSession: a question with the buttons No and Yes */
-function RestoreSessionDialog({ onClose }: { onClose: (answer: unknown) => void }): React.JSX.Element {
+function RestoreSessionDialog({ name, onClose }: { name: string; onClose: (answer: unknown) => void }): React.JSX.Element {
     const ref = useRef<HTMLDialogElement>(null)
     useEffect(() => {
         ref.current?.showModal()
@@ -84,10 +85,40 @@ function RestoreSessionDialog({ onClose }: { onClose: (answer: unknown) => void 
         <dialog ref={ref} className="confirm restore-session" aria-labelledby="restore-session-title"
             onClose={() => onClose(ref.current?.returnValue === 'yes')}>
             <h2 id="restore-session-title">{qtrc('appshell', 'The previous session quit unexpectedly.')}</h2>
+            {name && <p><strong className="restore-session-name">{name}</strong></p>}
             <p>{qtrc('appshell', 'Do you want to restore the session?')}</p>
             <form method="dialog" className="dialog-buttons">
                 <button className="secondary" value="no">{qtrc('global', 'No')}</button>
                 <button className="primary" value="yes" autoFocus>{qtrc('global', 'Yes')}</button>
+            </form>
+        </dialog>
+    )
+}
+
+/** a score more than can be stored: the user chooses the one to delete, the answer is its id (null: cancelled) */
+function RemoveScoreDialog({ scores, onClose }: { scores: ScoreEntry[]; onClose: (answer: unknown) => void }): React.JSX.Element {
+    const ref = useRef<HTMLDialogElement>(null)
+    const [selected, setSelected] = useState(scores[0]?.id ?? '')
+    useEffect(() => {
+        ref.current?.showModal()
+    }, [])
+    return (
+        <dialog ref={ref} className="confirm remove-score" aria-labelledby="remove-score-title"
+            onClose={() => onClose(ref.current?.returnValue === 'delete' ? selected : null)}>
+            <h2 id="remove-score-title">{webtr('Too many scores are stored')}</h2>
+            <p>{arg(webtr('This browser stores up to %1 scores. Choose one to delete so that this score can be stored. A deleted score cannot be restored unless you also have it as a file.'), String(MAX_SCORES))}</p>
+            <div className="remove-score-list" role="radiogroup" aria-labelledby="remove-score-title">
+                {scores.map(e => (
+                    <label key={e.id}>
+                        <input type="radio" name="remove-score" checked={e.id === selected} onChange={() => setSelected(e.id)} />
+                        <span className="remove-score-name">{baseName(e.name)}</span>
+                        <span className="remove-score-date">{new Date(e.opened).toLocaleDateString()}</span>
+                    </label>
+                ))}
+            </div>
+            <form method="dialog" className="dialog-buttons">
+                <button className="secondary" value="cancel" autoFocus>{qtrc('global', 'Cancel')}</button>
+                <button className="primary" value="delete">{qtrc('global', 'Delete')}</button>
             </form>
         </dialog>
     )
@@ -221,7 +252,8 @@ export function App(): React.JSX.Element {
             <SelectInstrumentHost />
             {session.dialog === 'saveChanges' && <SaveChangesDialog key={session.question} onClose={answer} />}
             {session.dialog === 'saveAs' && <SaveScoreDialog key={session.question} name={session.saveAsName} onClose={answer} />}
-            {session.dialog === 'restoreSession' && <RestoreSessionDialog key={session.question} onClose={answer} />}
+            {session.dialog === 'restoreSession' && <RestoreSessionDialog key={session.question} name={session.restoreName} onClose={answer} />}
+            {session.dialog === 'removeScore' && <RemoveScoreDialog key={session.question} scores={session.removableScores} onClose={answer} />}
             {session.dialog === 'migration' && session.migration && (
                 <MigrationDialog key={session.question} question={session.migration} onClose={answer} />
             )}

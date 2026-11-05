@@ -15,10 +15,16 @@ export interface MuseEncoreViewerToolbarGroups {
     pageNavigation?: boolean
     /** the view mode (page view, continuous views) and the page layout (side by side, vertically, two pages); default true */
     pageView?: boolean
-    /** zoom in / out, the zoom levels and fit modes, center page; default true */
+    /** zoom in / out, the zoom levels and fit modes, center measure; default true */
     zoom?: boolean
     /** play / pause, back to the start, the play position (MuseScore's MIDI renderer with MS Basic.sf3); default false */
     playback?: boolean
+    /**
+     * Playalong: the button that follows the score measure by measure while the user plays, into the microphone (the
+     * browser asks for it; the note detection is loaded on the first start) or on a MIDI device, and the MIDI settings;
+     * default false
+     */
+    playalong?: boolean
     /** print (vector pages on sheets of the score's page size); default true */
     print?: boolean
     /** full screen; default true */
@@ -37,7 +43,7 @@ export interface MuseEncoreViewerOptions {
     continuousView?: ContinuousView | false
     /** the pages of the page view side by side (default) or below each other */
     pageOrientation?: 'horizontal' | 'vertical'
-    /** facing pages (only for scores with a two-sided page layout); default false */
+    /** facing pages, odd page numbers on the right; default false */
     twoPages?: boolean
     /** the toolbar groups to show */
     toolbarGroups?: MuseEncoreViewerToolbarGroups
@@ -50,8 +56,8 @@ export interface MuseEncoreViewerOptions {
     disableToolbar?: boolean
     /** the status bar below the score (loading, number of pages, errors); default false */
     showStatusBar?: boolean
-    /** the color scheme of the controls; default 'auto' (the system's) */
-    theme?: 'auto' | 'light' | 'dark'
+    /** the color scheme of the controls; default 'auto' (the browser's), as is any other value */
+    colorScheme?: 'auto' | 'light' | 'dark'
     /**
      * the URL of the directory with the fonts (Leland, Bravura, ... and the chord/style files of the package's
      * fonts/ directory); default: the package's fonts/ directory next to dist/
@@ -59,6 +65,11 @@ export interface MuseEncoreViewerOptions {
     fontsUrl?: string
     /** the URL of MuseScore's soundfont "MS Basic.sf3" (51 MB, loaded on the first playback and cached); default: MuseScore's repository */
     soundFontUrl?: string
+    /**
+     * the URL of the directory with basic-pitch/ (the model of the playalong's note detection, 900 kB, loaded on the
+     * first start); default: the package's directory
+     */
+    noteDetectionUrl?: string
     /** called when a score is shown */
     onLoad?: (info: MuseEncoreScoreInfo) => void
     /** called when a score could not be loaded */

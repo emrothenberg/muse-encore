@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Playalong: the measures in the played order and the score following (editor/playalong/follower.ts).
+// Playalong: the measures in the played order and the score following (shared/playalong/follower.ts).
 import { describe, expect, it } from 'vitest'
 import { DEMOS, hasSubmodule, openScore } from './helpers'
 import { playalongMeasureBounds, playalongMeasures, type PlayalongMeasure } from '../src/index'
-import { ChordGrouper, chordSimilarity, PlayalongFollower } from '../editor/playalong/follower'
+import { ChordGrouper, chordSimilarity, PlayalongFollower } from '../shared/playalong/follower'
 
 /** measures with one note per beat: the pitches of each measure */
 function measures(...pitches: number[][]): PlayalongMeasure[] {

@@ -2,9 +2,9 @@
 // Note input methods (re-pitch, insert, real-time, rhythm), tuplets, slurs, hairpins, ottavas, grace notes, beams,
 // intervals and full-measure rests through MuseScore's actions (executeAction), each undone and redone: undo restores
 // the SVG of all pages exactly, redo repeats the change.
-import { beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import {
-    createScore, defaultNewScoreOptions, enterMidiNotes, executeAction, isActionChecked, isActionEnabled, redo, undo, type MasterScore,
+    createScore, defaultNewScoreOptions, drawPageSvg, enterMidiNotes, executeAction, isActionChecked, isActionEnabled, NotationConfiguration, redo, undo, type MasterScore,
 } from '../src/index'
 import { SegmentType } from '../src/engraving/dom/segment'
 import { SelectType } from '../src/engraving/dom/select'
@@ -134,9 +134,15 @@ describe('note input methods and line/tuplet commands', () => {
         // C++: a note entered with the note name keys (putNote) moves the cursor like in the other modes
         run(score, 'note-c')
         expect(score.inputState().tick().ticks()).toBe(480)
+        // C++: the advance comes 100 ms after the metronome tick
+        vi.useFakeTimers()
         run(score, 'realtime-advance')
+        expect(score.inputState().tick().ticks()).toBe(480)
+        vi.advanceTimersByTime(100)
         expect(score.inputState().tick().ticks()).toBe(960)
         run(score, 'note-e', 'realtime-advance')
+        vi.advanceTimersByTime(600)
+        vi.useRealTimers()
         expect(score.inputState().tick().ticks()).toBe(1920)
         expect(contents(m1)).toEqual(['72:1/4', 'r:1/4', '76:1/4', 'r:1/4'])
         run(score, 'note-input')
@@ -358,6 +364,133 @@ describe('MIDI note input (enterMidiNotes: the notes detected from the microphon
         expect(score.noteVal(61, 0, false).pitch).toBe(61)
         // written pitch input (allowTransposition): the sounding pitch is a major second lower
         expect(score.noteVal(62, 0, true).pitch).toBe(60)
+    })
+
+    it('input by duration: a note name sets the pitch, a duration enters the note', () => {
+        const score = newScore()
+        const m = score.firstMeasure()!
+        selectFirstRest(score)
+        run(score, 'note-input-by-duration')
+        const before = scoreHash(score)
+
+        run(score, 'note-c') // only the pitch of the next input: the score is unchanged
+        expect(score.inputState().notes().length).toBe(1)
+        expect(contents(m)[0]).toBe('r:1/1')
+        const pitch = score.inputState().notes()[0].pitch
+        expect(pitch % 12).toBe(0)
+
+        run(score, 'pad-note-4', 'pad-note-8') // two notes of the same pitch
+        expect(contents(m).slice(0, 2)).toEqual([`${pitch}:1/4`, `${pitch}:1/8`])
+        expect(score.inputState().tick().ticks()).toBe(720)
+
+        run(score, 'pitch-up-diatonic') // moves the pitch of the next input, not the entered note
+        const up = score.inputState().notes()[0].pitch
+        expect(up).toBeGreaterThan(pitch)
+        expect(contents(m).slice(0, 2)).toEqual([`${pitch}:1/4`, `${pitch}:1/8`])
+
+        run(score, 'pad-note-8') // the moved pitch is entered
+        expect(contents(m)[2]).toBe(`${up}:1/8`)
+
+        run(score, 'pad-rest', 'pad-note-4') // the rest mode enters a rest with the duration
+        expect(contents(m)[3]).toBe('r:1/4')
+
+        undo(score)
+        undo(score)
+        undo(score)
+        undo(score)
+        expect(scoreHash(score)).toBe(before)
+    })
+
+    it('input by duration: the ruler above the staff or, by the preference, the cursor on the staff', () => {
+        const score = newScore()
+        const svg = (): string => drawPageSvg(score, 0, { printing: false })
+        selectFirstRest(score)
+        const printed = drawPageSvg(score, 0)
+        const selected = new Set(svg().split('\n'))
+        run(score, 'note-input-by-note-name')
+        // what the note input cursor paints (without glyphs: the ids of the glyphs depend on the drawing)
+        const cursorLines = svg().split('\n').filter(l => !selected.has(l) && !l.includes('xlink:href') && l.includes('<'))
+        expect(cursorLines.length).toBeGreaterThan(0)
+
+        run(score, 'note-input-by-duration')
+        const ruler = svg()
+        expect(cursorLines.filter(l => ruler.includes(l))).toEqual([])
+        NotationConfiguration.setUseNoteInputCursorInInputByDuration(true)
+        try {
+            const onStaff = svg()
+            expect(onStaff).not.toBe(ruler)
+            expect(cursorLines.filter(l => !onStaff.includes(l))).toEqual([])
+        } finally {
+            NotationConfiguration.setUseNoteInputCursorInInputByDuration(false)
+        }
+        expect(svg()).toBe(ruler)
+        expect(drawPageSvg(score, 0)).toBe(printed) // printing: neither of them
+
+        // the preview of the next input: its pitch moves it, it is not printed and does not change the score
+        run(score, 'note-c')
+        const previewC = svg()
+        expect(previewC).not.toBe(ruler)
+        run(score, 'pitch-up-diatonic')
+        expect(svg()).not.toBe(previewC)
+        expect(drawPageSvg(score, 0)).toBe(printed)
+    })
+
+    it('the default input mode: note-input and a note name start it; a method action still chooses its own', () => {
+        NotationConfiguration.setDefaultNoteInputMethod(NoteEntryMethod.BY_DURATION)
+        try {
+            const score = newScore()
+            selectFirstRest(score)
+            run(score, 'note-input')
+            expect(score.inputState().noteEntryMethod()).toBe(NoteEntryMethod.BY_DURATION)
+            expect(isActionChecked(score, 'note-input-by-duration')).toBe(true)
+            run(score, 'note-input')
+            expect(score.noteEntryMode()).toBe(false)
+
+            // a note name starts the default mode: only the pitch of the next input
+            selectFirstRest(score)
+            run(score, 'note-d')
+            expect(score.inputState().noteEntryMethod()).toBe(NoteEntryMethod.BY_DURATION)
+            expect(contents(score.firstMeasure()!)[0]).toBe('r:1/1')
+            run(score, 'note-input')
+
+            selectFirstRest(score)
+            run(score, 'note-input-by-note-name')
+            expect(score.inputState().noteEntryMethod()).toBe(NoteEntryMethod.BY_NOTE_NAME)
+        } finally {
+            NotationConfiguration.setDefaultNoteInputMethod(NoteEntryMethod.BY_NOTE_NAME)
+        }
+    })
+
+    it('a dot goes to the next note entered or, by the preference, to the previous note', () => {
+        const dotted = (): string[] => {
+            const score = newScore()
+            selectFirstRest(score)
+            run(score, 'note-input', 'pad-note-4', 'note-c', 'pad-dot', 'note-d')
+            return contents(score.firstMeasure()!).slice(0, 2).map(c => c.split(':')[1])
+        }
+        expect(dotted()).toEqual(['1/4', '3/8'])
+        NotationConfiguration.setAddAccidentalDotsArticulationsToNextNoteEntered(false)
+        try {
+            expect(dotted()).toEqual(['3/8', '1/4'])
+        } finally {
+            NotationConfiguration.setAddAccidentalDotsArticulationsToNextNoteEntered(true)
+        }
+    })
+
+    it('an accidental goes to the next note entered or, by the preference, to the previous note', () => {
+        const pitches = (): number[] => {
+            const score = newScore()
+            selectFirstRest(score)
+            run(score, 'note-input', 'pad-note-4', 'note-c', 'flat', 'note-d')
+            return contents(score.firstMeasure()!).slice(0, 2).map(c => Number(c.split(':')[0]) % 12)
+        }
+        expect(pitches()).toEqual([0, 1]) // C, D flat
+        NotationConfiguration.setAddAccidentalDotsArticulationsToNextNoteEntered(false)
+        try {
+            expect(pitches()).toEqual([11, 2]) // C flat, D
+        } finally {
+            NotationConfiguration.setAddAccidentalDotsArticulationsToNextNoteEntered(true)
+        }
     })
 
     it('the input by duration takes the pitches for the next input', () => {

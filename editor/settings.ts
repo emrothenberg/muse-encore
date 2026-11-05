@@ -47,6 +47,15 @@ export interface AppSettings {
     }
     /** the items of the note input toolbar (MuseScore's ToolConfig "noteInput"); null = the default */
     noteInputBar: { action: string; show: boolean }[] | null
+    /** NotationConfiguration: the Note input section of the preferences */
+    noteInput: {
+        /** defaultNoteInputMethod ("Default input mode"): the code of its action */
+        defaultMethod: 'note-input-by-note-name' | 'note-input-by-duration'
+        /** addAccidentalDotsArticulationsToNextNoteEntered ("Apply accidentals, ...": true = to next note entered) */
+        addAccidentalDotsArticulationsToNextNoteEntered: boolean
+        /** useNoteInputCursorInInputByDuration ("Input by duration mode cursor": false = above staff, true = on staff) */
+        useNoteInputCursorInInputByDuration: boolean
+    }
     /** the panels left of the score (panels/panels.ts checks the ids): the open ones, the current tab, the width, collapsed */
     panels: {
         open: string[]
@@ -58,12 +67,37 @@ export interface AppSettings {
     palettes: Record<string, unknown> | null
     /** the playback (NotationConfiguration, PlaybackConfiguration) and the mute button of this app */
     playback: PlaybackSettings
+    /** the MIDI input (MidiConfiguration, NotationConfiguration, MidiRemoteConfiguration) */
+    midi: MidiSettings
     /** settings of the web version (not in MuseScore) */
     web: WebSettings
     /** the settings of the export formats (ImagesExportConfiguration, MidiConfiguration, MusicXmlConfiguration) */
     export: ExportConfiguration
     /** Preferences > Import: the style for imports and the settings of the import formats */
     import: ImportSettings
+}
+
+export interface MidiSettings {
+    /** NotationConfiguration::isMidiInputEnabled (without the browser's permission there is no input anyway) */
+    inputEnabled: boolean
+    /** MidiConfiguration::midiInputDeviceId: "" = the first available device, "-1" = no device */
+    inputDeviceId: string
+    /** the name of the device (not in MuseScore): the id of a device can change in a browser */
+    inputDeviceName: string
+    /** startNoteInputAtSelectedNoteRestWhenPressingMidiKey */
+    startNoteInputWhenPressingKey: boolean
+    /** MidiRemoteConfiguration::advanceToNextNoteOnKeyRelease */
+    advanceToNextNoteOnKeyRelease: boolean
+    /** delayBetweenNotesInRealTimeModeMilliseconds */
+    realtimeDelay: number
+    /** midiUseWrittenPitch */
+    useWrittenPitch: boolean
+    /** useMidiVelocityAndDurationDuringNoteInput */
+    useMidiVelocityAndDuration: boolean
+    /** MidiConfiguration::useRemoteControl */
+    useRemoteControl: boolean
+    /** the actions of MIDI keys and controllers (C++ midi_mappings.xml) */
+    mappings: { action: string; event: { type: number; value: number } }[]
 }
 
 export interface ImportSettings extends ImportConfiguration {
@@ -95,6 +129,8 @@ export interface PlaybackSettings {
     playalongOvertoneFilter: OvertoneFilterLevel
     /** the values measured by "Calibrate the note detection…" (null: not calibrated) */
     playalongCalibration: DetectionCalibration | null
+    /** "Keep microphone active during session" (not in MuseScore; see shared/notedetection/microphone.ts) */
+    playalongKeepMicrophone: boolean
     /** PlaybackConfiguration::playNotesWhenEditing ("Hear playback when adding, editing, and selecting notes") */
     playNotesWhenEditing: boolean
     /** playChordWhenEditing */
@@ -105,6 +141,8 @@ export interface PlaybackSettings {
     playPreviewNotesInInputByDuration: boolean
     /** playPreviewNotesWithScoreDynamics */
     playPreviewNotesWithScoreDynamics: boolean
+    /** PlaybackConfiguration::playNotesOnMidiInput ("Play MIDI input") */
+    playNotesOnMidiInput: boolean
     /** notePlayDurationMilliseconds ("Playback duration") */
     notePlayDuration: number
 }
@@ -154,12 +192,17 @@ const DEFAULTS: AppSettings = {
     ui: { language: 'system', metricUnit: false },
     layout: { docks: {}, hidden: [], statusBar: true },
     noteInputBar: null,
+    noteInput: { defaultMethod: 'note-input-by-note-name', addAccidentalDotsArticulationsToNextNoteEntered: true, useNoteInputCursorInInputByDuration: false },
     panels: { open: ['palettesPanel', 'instrumentsPanel', 'inspectorPanel'], current: 'palettesPanel', width: 300, collapsed: false },
     palettes: null,
     playback: {
-        muted: false, metronome: false, countIn: false, pan: true, smoothPan: false, playRepeats: true, playChordSymbols: true, playalongPractice: false, playalongOvertoneFilter: 'normal', playalongCalibration: null,
+        muted: false, metronome: false, countIn: false, pan: true, smoothPan: false, playRepeats: true, playChordSymbols: true, playalongPractice: false, playalongOvertoneFilter: 'normal', playalongCalibration: null, playalongKeepMicrophone: false,
         playNotesWhenEditing: true, playChordWhenEditing: true, playHarmonyWhenEditing: true,
-        playPreviewNotesInInputByDuration: true, playPreviewNotesWithScoreDynamics: true, notePlayDuration: 500,
+        playPreviewNotesInInputByDuration: true, playPreviewNotesWithScoreDynamics: true, playNotesOnMidiInput: true, notePlayDuration: 500,
+    },
+    midi: {
+        inputEnabled: true, inputDeviceId: '', inputDeviceName: '', startNoteInputWhenPressingKey: true, advanceToNextNoteOnKeyRelease: true,
+        realtimeDelay: 750, useWrittenPitch: true, useMidiVelocityAndDuration: true, useRemoteControl: true, mappings: [],
     },
     web: { spacePan: true },
     export: defaultExportConfiguration(),
@@ -208,6 +251,11 @@ function sanitize(s: Partial<{ [K in keyof AppSettings]: Partial<AppSettings[K]>
         noteInputBar: Array.isArray(s.noteInputBar)
             && s.noteInputBar.every(i => typeof i?.action === 'string' && typeof i?.show === 'boolean')
             ? s.noteInputBar as AppSettings['noteInputBar'] : null,
+        noteInput: {
+            defaultMethod: s.noteInput?.defaultMethod === 'note-input-by-duration' ? 'note-input-by-duration' : 'note-input-by-note-name',
+            addAccidentalDotsArticulationsToNextNoteEntered: s.noteInput?.addAccidentalDotsArticulationsToNextNoteEntered !== false,
+            useNoteInputCursorInInputByDuration: s.noteInput?.useNoteInputCursorInInputByDuration === true,
+        },
         panels: {
             open: isStringArray(s.panels?.open) ? s.panels.open : DEFAULTS.panels.open,
             current: typeof s.panels?.current === 'string' ? s.panels.current : DEFAULTS.panels.current,
@@ -216,10 +264,20 @@ function sanitize(s: Partial<{ [K in keyof AppSettings]: Partial<AppSettings[K]>
         },
         palettes: s.palettes && typeof s.palettes === 'object' && !Array.isArray(s.palettes) ? s.palettes as Record<string, unknown> : null,
         playback: sanitizePlayback(s.playback ?? {}),
+        midi: sanitizeMidi(s.midi ?? {}),
         web: { spacePan: typeof s.web?.spacePan === 'boolean' ? s.web.spacePan : DEFAULTS.web.spacePan },
         export: sanitizeExport(s.export ?? {}),
         import: sanitizeImport(s.import ?? {}),
     }
+}
+
+function sanitizeMidi(m: Partial<MidiSettings>): MidiSettings {
+    const merged = mergeTyped(DEFAULTS.midi, m)
+    merged.realtimeDelay = merged.realtimeDelay > 0 ? merged.realtimeDelay : DEFAULTS.midi.realtimeDelay
+    merged.mappings = Array.isArray(m.mappings)
+        ? m.mappings.filter(x => typeof x?.action === 'string' && typeof x.event?.type === 'number' && typeof x.event?.value === 'number')
+        : []
+    return merged
 }
 
 function sanitizeImport(i: Partial<ImportSettings>): ImportSettings {
@@ -256,10 +314,11 @@ function sanitizePlayback(p: Partial<PlaybackSettings>): PlaybackSettings {
     const b = (k: keyof PlaybackSettings): boolean => typeof p[k] === 'boolean' ? p[k] as boolean : d[k] as boolean
     return {
         muted: b('muted'), metronome: b('metronome'), countIn: b('countIn'), pan: b('pan'), smoothPan: b('smoothPan'), playRepeats: b('playRepeats'),
-        playChordSymbols: b('playChordSymbols'), playalongPractice: b('playalongPractice'), playNotesWhenEditing: b('playNotesWhenEditing'),
+        playChordSymbols: b('playChordSymbols'), playalongPractice: b('playalongPractice'), playalongKeepMicrophone: b('playalongKeepMicrophone'), playNotesWhenEditing: b('playNotesWhenEditing'),
         playChordWhenEditing: b('playChordWhenEditing'), playHarmonyWhenEditing: b('playHarmonyWhenEditing'),
         playPreviewNotesInInputByDuration: b('playPreviewNotesInInputByDuration'),
         playPreviewNotesWithScoreDynamics: b('playPreviewNotesWithScoreDynamics'),
+        playNotesOnMidiInput: b('playNotesOnMidiInput'),
         // NotePreviewSection: 0..10000 ms
         notePlayDuration: typeof p.notePlayDuration === 'number' && p.notePlayDuration >= 0 && p.notePlayDuration <= 10000
             ? p.notePlayDuration : d.notePlayDuration,
