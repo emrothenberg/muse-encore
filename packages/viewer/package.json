@@ -13,6 +13,7 @@
       "import": "./dist/muse-encore-viewer.js"
     },
     "./fonts/*": "./fonts/*",
+    "./basic-pitch/*": "./basic-pitch/*",
     "./package.json": "./package.json"
   },
   "browser": "./dist/muse-encore-viewer.js",
@@ -21,6 +22,7 @@
   "files": [
     "dist",
     "fonts",
+    "basic-pitch",
     "LICENSE",
     "README.md"
   ],

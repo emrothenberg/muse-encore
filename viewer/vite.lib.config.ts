@@ -9,6 +9,8 @@ import { defineConfig } from 'vite'
 export default defineConfig({
     root: import.meta.dirname,
     publicDir: false,
+    // the worker of the note detection is found relative to the module, wherever the package is served from
+    base: './',
     build: {
         outDir: '../packages/viewer/dist',
         emptyOutDir: true,

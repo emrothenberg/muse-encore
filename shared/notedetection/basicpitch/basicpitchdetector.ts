@@ -9,12 +9,18 @@
 import { DEFAULT_NOTE_DETECTOR_SETTINGS, type DetectedNote, type DetectionUpdate, type NoteDetector, type NoteDetectorOptions, type NoteDetectorSettings, type NoteDetectorStats } from '../notedetector'
 import { AudioInput } from './audioinput'
 import type { FromWorker, ToWorker } from './worker'
+import workerUrl from './worker?worker&url'
 
 let s_worker: Worker | null = null
 
 /** the worker (once: it keeps the model loaded) */
 function worker(): Worker {
-    s_worker ??= new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })
+    if (!s_worker) {
+        // a script of another origin (the viewer package from a CDN) cannot be a worker itself, but a worker can import it
+        const url = new URL(workerUrl, import.meta.url)
+        s_worker = new Worker(url.origin === location.origin ? url
+            : URL.createObjectURL(new Blob([`import ${JSON.stringify(url.href)}`], { type: 'text/javascript' })), { type: 'module' })
+    }
     return s_worker
 }
 
@@ -25,6 +31,7 @@ export class BasicPitchDetector implements NoteDetector {
     private active: number[] = []
     private m_stats: NoteDetectorStats = { processingMs: 0, latency: 0, updates: 0, rejected: 0, overtones: 0, floorDb: 0 }
     private listener: ((event: MessageEvent<FromWorker>) => void) | null = null
+    private errorListener: (() => void) | null = null
 
     constructor(options: NoteDetectorOptions) {
         this.options = options
@@ -60,6 +67,9 @@ export class BasicPitchDetector implements NoteDetector {
                 }
             }
             w.addEventListener('message', this.listener)
+            // the worker's script could not be loaded (no message would ever come)
+            this.errorListener = (): void => reject(new Error('The note detection could not be loaded'))
+            w.addEventListener('error', this.errorListener)
         })
         const input = new AudioInput(() => {}, this.options.keepMicrophone)
         this.input = input
@@ -89,6 +99,10 @@ export class BasicPitchDetector implements NoteDetector {
         if (this.listener) {
             s_worker?.removeEventListener('message', this.listener)
             this.listener = null
+        }
+        if (this.errorListener) {
+            s_worker?.removeEventListener('error', this.errorListener)
+            this.errorListener = null
         }
         const input = this.input
         this.input = null

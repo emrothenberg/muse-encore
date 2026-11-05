@@ -41,6 +41,12 @@ rmSync(join(PKG, 'fonts'), { recursive: true, force: true })
 cpSync(join(ROOT, 'fonts'), join(PKG, 'fonts'), { recursive: true, filter: src => !src.endsWith('.DS_Store') })
 copyFileSync(join(ROOT, 'LICENSE'), join(PKG, 'LICENSE'))
 
+// the model of the playalong's note detection is loaded at runtime from ../basic-pitch/ relative to the module
+const MODEL = join(ROOT, 'shared/notedetection/basicpitch')
+rmSync(join(PKG, 'basic-pitch'), { recursive: true, force: true })
+cpSync(join(MODEL, 'model'), join(PKG, 'basic-pitch'), { recursive: true })
+copyFileSync(join(MODEL, 'LICENSE'), join(PKG, 'basic-pitch/LICENSE'))
+
 const example = readFileSync(join(PKG, 'example/auto_template.html'), 'utf8')
 writeFileSync(join(PKG, 'example/auto.html'),
     example.replaceAll('../dist/muse-encore-viewer.js?{timestamp}', `../dist/muse-encore-viewer.js?${Date.now()}`))

@@ -460,3 +460,24 @@ button.secondary:hover { background: var(--hover); }
 .viewer.narrow .title { max-width: 14ch; }
 .viewer.narrow #help, .viewer.narrow .play-position { display: none; }
 .viewer.narrow { --page-gap: 12px; }
+
+/* ---- playalong ---- */
+
+.playalong-follow { display: inline-flex; align-items: center; gap: 2px; }
+.playalong-measure-number { min-width: 2.5em; text-align: center; font-variant-numeric: tabular-nums; }
+.playalong-status { margin: 0 6px; color: var(--muted); white-space: nowrap; }
+.playalong-status.error { color: #d33; }
+.playalong-marker {
+    position: absolute;
+    z-index: 1;
+    pointer-events: none;
+    background: rgba(0, 101, 191, .12);
+    border: 2px solid rgba(0, 101, 191, .6);
+    border-radius: 3px;
+    box-sizing: border-box;
+    transition: left .15s, top .15s, width .15s;
+}
+dialog.midi-settings { max-width: 360px; }
+.midi-field { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
+.midi-field select { flex: 1; min-width: 0; }
+.midi-message:empty { display: none; }

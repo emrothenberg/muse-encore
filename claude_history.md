@@ -1825,3 +1825,13 @@
 - Known limits: NoteInputCursor's TAB string marks are still missing; the ruler was only checked against the C++ source
   and in the port's editor (mscore's command line does not render note input).
 - tools/bump-version.ts: MuseEncore and muse-encore-viewer always get the same version (one version argument; the viewer's argument, its question and `-` are removed).
+
+## Viewer: Playalong and MIDI settings
+
+- Option `toolbarGroups.playalong` (default false) of the viewer component: the Playalong button with the measure buttons, the practice mode and the
+  highlight of the measure (viewer/src/playalong.ts, on shared/playalong/follower.ts, moved from editor/playalong), and the MIDI settings dialog (Enable MIDI input, device; viewer/src/midiinput.ts on
+  WebMidiInPort, asking for the access only by "Enable MIDI input"). Settings in localStorage `musescoreweb:viewer-playalong`. Turned on in the viewer app (viewer/main.ts) and in the third viewer of packages/viewer/example/index.html; embedded viewers have to ask for it.
+- New compared to the editor: the viewer's playalong also follows a MIDI device; with the input on and a device connected, the microphone stays off. The editor's playalong still only listens to the microphone.
+- The package now has basic-pitch/ (the model; option `noteDetectionUrl`). The detector's worker is created through a blob: import when its script is on another origin (a CDN), and a worker that cannot be loaded now rejects the start instead of hanging.
+- Not in the viewer: calibration, overtone filter menu, keep microphone, MIDI input pitch, MIDI mappings, selection of the parts followed, Up/Down keys.
+- Tests: webapps.e2e.ts (fake MIDI device). Checked once with the built package from another origin and Chrome's fake microphone playing a WAV of tones ("Notes heard: A4"). Not checked with a physical MIDI device, a real microphone or on jsDelivr itself.

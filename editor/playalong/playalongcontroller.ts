@@ -23,7 +23,7 @@ import { closeKeptMicrophone } from '../../shared/notedetection/microphone'
 import calibrationSheet from './calibration.mscx?raw'
 
 const CALIBRATION_FILE_NAME = 'Note detection calibration.mscx'
-import { ChordGrouper, PlayalongFollower } from './follower'
+import { ChordGrouper, PlayalongFollower } from '../../shared/playalong/follower'
 import { playbackState } from '../playback/playbackcontroller'
 
 export interface PlayalongState {

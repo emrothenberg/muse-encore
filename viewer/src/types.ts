@@ -19,6 +19,12 @@ export interface MuseEncoreViewerToolbarGroups {
     zoom?: boolean
     /** play / pause, back to the start, the play position (MuseScore's MIDI renderer with MS Basic.sf3); default false */
     playback?: boolean
+    /**
+     * Playalong: the button that follows the score measure by measure while the user plays, into the microphone (the
+     * browser asks for it; the note detection is loaded on the first start) or on a MIDI device, and the MIDI settings;
+     * default false
+     */
+    playalong?: boolean
     /** print (vector pages on sheets of the score's page size); default true */
     print?: boolean
     /** full screen; default true */
@@ -59,6 +65,11 @@ export interface MuseEncoreViewerOptions {
     fontsUrl?: string
     /** the URL of MuseScore's soundfont "MS Basic.sf3" (51 MB, loaded on the first playback and cached); default: MuseScore's repository */
     soundFontUrl?: string
+    /**
+     * the URL of the directory with basic-pitch/ (the model of the playalong's note detection, 900 kB, loaded on the
+     * first start); default: the package's directory
+     */
+    noteDetectionUrl?: string
     /** called when a score is shown */
     onLoad?: (info: MuseEncoreScoreInfo) => void
     /** called when a score could not be loaded */

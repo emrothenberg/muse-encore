@@ -442,6 +442,83 @@ describe.skipIf(!CHROME || !hasSubmodule).each(['viewer', 'editor'])('%s', (app)
         await context.close()
     }, 120000)
 
+    it.runIf(app === 'viewer')('follows the score with the playalong on the notes of a MIDI device', async () => {
+        const { page, context } = await newPage()
+        await page.addInitScript(() => {
+            const input = {
+                id: 'fake', name: 'Fake Keyboard', state: 'connected', onmidimessage: null as ((e: unknown) => void) | null,
+                open: async () => input, close: async () => input,
+            }
+            const w = window as unknown as { __midi: unknown }
+            w.__midi = { requests: 0, send: (bytes: number[]) => input.onmidimessage?.({ data: new Uint8Array(bytes), timeStamp: performance.now() }) }
+            navigator.requestMIDIAccess = async () => {
+                (w.__midi as { requests: number }).requests++
+                return { inputs: new Map([['fake', input]]), outputs: new Map(), onstatechange: null } as unknown as MIDIAccess
+            }
+            const query = navigator.permissions.query.bind(navigator.permissions)
+            navigator.permissions.query = async d => d.name === 'midi'
+                ? { state: 'prompt', addEventListener: () => {} } as unknown as PermissionStatus : query(d)
+        })
+        const options = { continuousView: 'vertical', toolbarGroups: { playalong: true }, showStatusBar: true }
+        await page.goto(`${base}embed.html?url=${encodeURIComponent(SCORE_HOST + 'amazing.mscz')}&options=${encodeURIComponent(JSON.stringify(options))}`)
+        await page.evaluate(() => (window as unknown as { viewers: { ready: Promise<unknown> }[] }).viewers[0].ready)
+        const inViewer = <T>(fn: string): Promise<T> => page.evaluate(`(() => { const r = document.querySelector('#score1 .muse-encore-viewer').shadowRoot; return ${fn} })()`)
+        const click = (id: string): Promise<void> => inViewer(`r.getElementById('${id}').click()`)
+        const measure = (): Promise<string> => inViewer("r.getElementById('playalong-measure').textContent")
+        const marker = (): Promise<boolean> => inViewer("!!r.querySelector('.playalong-marker')?.checkVisibility()")
+
+        // the second viewer has no playalong; nothing asks for the MIDI access by itself
+        expect(await page.evaluate(() => document.querySelector('#score2 .muse-encore-viewer')!.shadowRoot!.getElementById('playalong')!.checkVisibility())).toBe(false)
+        expect(await page.evaluate(() => (window as unknown as { __midi: { requests: number } }).__midi.requests)).toBe(0)
+
+        // Enable MIDI input: the device is connected
+        await click('midi-settings')
+        await click('midi-on')
+        await page.waitForFunction(() => document.querySelector('#score1 .muse-encore-viewer')!.shadowRoot!.querySelector<HTMLInputElement>('#midi-on')!.checked)
+        expect(await inViewer("r.getElementById('midi-device').selectedOptions[0].textContent")).toBe('Fake Keyboard')
+        expect(await inViewer("r.getElementById('midi-settings').getAttribute('aria-pressed')")).toBe('true')
+        await inViewer("r.getElementById('midi-dialog').close()")
+
+        // Playalong on: no microphone is needed, the first measure is highlighted
+        await click('playalong')
+        expect(await inViewer("r.getElementById('playalong').getAttribute('aria-pressed')")).toBe('true')
+        expect(await inViewer("r.getElementById('playalong-status').hidden")).toBe(true)
+        expect(await measure()).toBe('1')
+        expect(await marker()).toBe(true)
+
+        // the measure buttons
+        await click('playalong-next')
+        expect(await measure()).toBe('2')
+        await click('playalong-prev')
+        expect(await measure()).toBe('1')
+
+        // playing the score's notes moves on (the module of the dev server, the viewer's own)
+        const chords = await page.evaluate(`(async () => {
+            const m = await import('/@fs${ROOT}src/index.ts')
+            const data = await (await fetch('${SCORE_HOST}amazing.mscz')).arrayBuffer()
+            const s = await m.openScoreFile(data, 'amazing.mscz')
+            m.layoutScore(s)
+            return m.playalongMeasures(s, null).slice(0, 6).flatMap(x => x.events.map(e => e.pitches))
+        })()`) as number[][]
+        expect(chords.length).toBeGreaterThan(4)
+        for (const chord of chords) {
+            await page.evaluate((c) => {
+                const midi = (window as unknown as { __midi: { send(b: number[]): void } }).__midi
+                c.forEach(p => midi.send([0x90, p, 80]))
+                c.forEach(p => midi.send([0x80, p, 0]))
+            }, chord)
+            await page.waitForTimeout(350)
+        }
+        expect(Number(await measure())).toBeGreaterThan(2)
+        expect(await inViewer("r.getElementById('status').textContent")).toContain('Notes heard: ')
+
+        // off: the highlight and the measure buttons are gone
+        await click('playalong')
+        expect(await marker()).toBe(false)
+        expect(await inViewer("r.getElementById('playalong-follow').hidden")).toBe(true)
+        await context.close()
+    }, 180000)
+
     it.runIf(app === 'viewer').each([
         // browser, options, expected
         ['light', { colorScheme: 'dark' }, 'dark'],

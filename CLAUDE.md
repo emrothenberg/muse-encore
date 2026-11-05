@@ -100,11 +100,11 @@ tools/gen/              generators for tables derived from the C++ sources (re-r
 tools/                  node scripts: render to PNG, compare with MuseScore output
 viewer/                 MuseEncore Viewer: src/museencoreviewer.ts is the viewer component (plain DOM in a shadow root, styles in
                         src/viewer.css: page view, continuous views incl. fit to window, zoom, print, full screen, playback with
-                        src/playback.ts; options and API types in src/types.ts); main.ts is the app (opening files, storage.ts),
+                        src/playback.ts, playalong with src/playalong.ts (microphone or MIDI input, src/midiinput.ts); options and API types in src/types.ts); main.ts is the app (opening files, storage.ts),
                         src/index.ts the npm package's entry (applyMuseEncoreViewer), embed.html a dev page of the package API
 packages/viewer/        the npm package "muse-encore-viewer" (package.json, README; dist/ + fonts/ are built by
                         tools/build-viewer-package.ts with viewer/vite.lib.config.ts: one bundled ES module for CDNs)
-shared/                 code of both apps: icons.ts (SVG icons), playback/ (Synthesizer interface, SpessaSynth + MS Basic.sf3 loaded on first use and
+shared/                 code of both apps: icons.ts (SVG icons), playalong/follower.ts (the score following of the playalong), playback/ (Synthesizer interface, SpessaSynth + MS Basic.sf3 loaded on first use and
                         cached, player.ts scheduler), vite-plugin-sound.ts (serves/copies the soundfont), notedetection/
                         (NoteDetector interface: microphone -> notes; microphone.ts opens, closes or keeps the microphone; basicpitch/ = Spotify's basic-pitch, Apache-2.0,
                         vendored with its TensorFlow.js model, loaded on demand, running in a Web Worker (worker.ts;
@@ -121,7 +121,7 @@ editor/                 MuseEncore (the editor), Vite score editor app: React UI
                         dialogs/MigrationDialog.tsx), tabs.ts (scores open in other tabs: Web Locks), db.ts (IndexedDB via
                         Dexie), settings.ts (localStorage), playback/ (playbackcontroller.ts = playback actions on shared/playback,
                         playbackview.ts cursor/pan/loop markers; `?synth=none` = no sound), playalong/ (Playalong, not
-                        in MuseScore: follower.ts = score following, playalongcontroller.ts, playalongview.ts; in note
+                        in MuseScore: shared/playalong/follower.ts = score following, playalongcontroller.ts, playalongview.ts; in note
                         input mode the button enters the notes played (enterMidiNotes = NotationMidiInput note-ons); calibration of the note
                         detection with calibration.mscx and CalibrationBox.tsx;
                         `?playalong-input=test-melody` instead of the microphone), midi/ (midicontroller.ts = MidiInputOutputController: connection, events to MidiRemote and the score,

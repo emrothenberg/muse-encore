@@ -111,6 +111,16 @@ The playback uses MuseScore's MIDI renderer and MuseScore's soundfont "MS Basic.
 playback and kept in the browser's Cache Storage. By default it is loaded from MuseScore's repository at the
 reference version (raw.githubusercontent.com); set `soundFontUrl` to serve it yourself.
 
+## Playalong and MIDI input
+
+With `toolbarGroups: { playalong: true }` the toolbar has the Playalong button: it follows the score measure by measure
+while the user plays, and highlights the measure. It starts at the paused play position. The notes come from a MIDI
+device if the MIDI input is on (the MIDI settings button: "Enable MIDI input", the device; the browser asks for
+permission, Safari has no Web MIDI) and otherwise from the microphone (Spotify's
+[basic-pitch](https://github.com/spotify/basic-pitch), Apache-2.0, running in a Web Worker). The model and the
+detection are loaded on the first start. The model is in `basic-pitch/` next to `dist/`; if you copy only the module,
+copy it too and set `noteDetectionUrl`. The browser needs a secure context (HTTPS) for the microphone and for MIDI.
+
 ## Fonts
 
 The engraving fonts (Leland, Bravura, Edwin, ... with their licenses) are in `fonts/` and loaded at runtime from the
