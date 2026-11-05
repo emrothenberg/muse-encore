@@ -1844,3 +1844,7 @@
 - The editor rebuilds the pages when the first page number changes the pairs (page settings, undo, redo).
 - isTwoSided stays in the library's API but the apps no longer use it.
 - The package's example page (packages/viewer/example/index.html) shows the full JavaScript of each example above its score, highlighted with highlight.js (CDN, theme idea). The code is in one place: `<script type="text/plain" class="example">` blocks, which the page displays and runs (inline module scripts would be emptied by Vite's dev server). `?url=` still works, through the global `urlToMuseScoreFile`; `window.viewers` is gone.
+- The package's example page ends with a configurator: a form generated from a table of the options (view, viewer, toolbarGroups; not the URLs and callbacks); every change creates the viewer again and shows the code with the options that differ from the defaults.
+- The example page shows code only in the configurator: the first three viewers no longer show theirs, so one module script runs them all (no more text/plain blocks). Each label of the configurator is in a section.
+- The example page has an overview of its sections at the left side from 1200px width on; the title of the section with the most pixels in the window is bold.
+- The configurator of the example page has a "Reset to defaults" button (a native form reset).
