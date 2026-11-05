@@ -58,7 +58,7 @@ const viewer = applyMuseEncoreViewer(targetElement, pathToMuseScoreFile, {
     zoom: 'whole-page',           // or 'page-width' or a percentage (100 with centerAndResizeToPage: false)
     continuousView: false,        // 'horizontal', 'vertical', 'window-fit'; false: the page view
     pageOrientation: 'horizontal',// the pages of the page view side by side, or 'vertical'
-    twoPages: false,              // facing pages (scores with a two-sided page layout)
+    twoPages: false,              // facing pages, odd page numbers on the right
     toolbarGroups: {
         pageNavigation: true,     // previous / next page, page indicator
         pageView: true,           // view mode (page / continuous views) and page layout

@@ -180,8 +180,8 @@ export function registerAppActions(): void {
         run: () => setOrientation('vertical'), enabled: pageViewShown, checked: () => scoreViewState().orientation === 'vertical',
     }, { title: [null, 'Pages vertically'], icon: 0xF3AF, checkable: true })
     registerAction('view-two-pages', {
-        run: toggleSpread, enabled: () => pageViewShown() && scoreViewState().spreadAvailable, checked: () => scoreViewState().spread,
-    }, { title: [null, 'Two pages'], description: [null, 'Two pages (for scores with a two-sided page layout)'], icon: 0xEF7F, checkable: true })
+        run: toggleSpread, enabled: pageViewShown, checked: () => scoreViewState().spread,
+    }, { title: [null, 'Two pages'], icon: 0xEF7F, checkable: true })
     // the icon is an SVG (ToolBars.tsx)
     registerAction('view-center-page', { run: () => centerMeasureOrPage(playbackState()), enabled: scoreShown },
         { title: [null, 'Center measure'], description: [null, 'Center the selected measure, or the first measure'] })

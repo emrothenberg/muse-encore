@@ -441,6 +441,11 @@ export function isTwoSided(score: Score): boolean {
     return score.style().styleB(Sid.pageTwosided)
 }
 
+/** true if the first page has an odd number (Page::isOdd with the first page number), which makes it a right-hand page */
+export function firstPageIsRight(score: Score): boolean {
+    return ((1 + score.pageNumberOffset()) & 1) !== 0
+}
+
 /** score title (metaTag "workTitle" or the first title text), empty if none */
 export function scoreTitle(score: Score): string {
     return score.metaTag('workTitle') || ''

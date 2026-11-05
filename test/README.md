@@ -33,7 +33,7 @@ these tests run for the viewer and the editor. Covers:
 - loading window while a file is downloaded/laid out; input blocked meanwhile
 - opening via `?url=`, page centered, last file remembered across reloads, close button forgets it (also when
   reloading immediately; the editor then shows its home screen)
-- pages side by side / vertical; two-page spreads only for two-sided layouts ([1], [2, 3], …), spread navigation
+- pages side by side / vertical; two-page spreads for every score (odd page numbers on the right), spread navigation
 - MuseScore shortcuts (Ctrl +/-/0, Home/End, Ctrl+PgDn), Ctrl+wheel zoom at the pointer
 - space + drag beyond the pages (a 48 px strip stays visible), "Center measure" (the bar being played, the
   selection in the editor, the paused position or the first bar; its page if the page fits into the view)

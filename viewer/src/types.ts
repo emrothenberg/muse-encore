@@ -43,7 +43,7 @@ export interface MuseEncoreViewerOptions {
     continuousView?: ContinuousView | false
     /** the pages of the page view side by side (default) or below each other */
     pageOrientation?: 'horizontal' | 'vertical'
-    /** facing pages (only for scores with a two-sided page layout); default false */
+    /** facing pages, odd page numbers on the right; default false */
     twoPages?: boolean
     /** the toolbar groups to show */
     toolbarGroups?: MuseEncoreViewerToolbarGroups

@@ -8,11 +8,12 @@
  */
 /// <reference types="vite/client" />
 import {
-    centerTargetBounds, NONE_DEVICE_ID, playalongMeasureBounds, drawContinuousPanel, drawPage, drawPageSvg, initEngravingFonts, isTwoSided, layoutScore, onImageDecoded, openFileAccept, openScoreFile, scoreBaseName, pageCount,
+    centerTargetBounds, NONE_DEVICE_ID, playalongMeasureBounds, drawContinuousPanel, drawPage, drawPageSvg, firstPageIsRight, initEngravingFonts, layoutScore, onImageDecoded, openFileAccept, openScoreFile, scoreBaseName, pageCount,
     pageSize, playbackCursorBounds, scoreTitle, setViewMode as setScoreViewMode, SvgGlyphDefs, withPageView, type MasterScore,
 } from '../../src/index'
 import { centerViewOnMeasureOrPage } from '../../shared/centerview'
 import { CENTER_ICON } from '../../shared/icons'
+import { spreadPages, stepSpread } from '../../shared/spreads'
 import { SOUNDFONT_CDN_URL } from '../../shared/playback/soundfont'
 import { ViewerMidiInput, type ViewerMidiSettings } from './midiinput'
 import { ViewerPlayalong, type ViewerPlayalongState } from './playalong'
@@ -179,7 +180,7 @@ function template(appTitle: string): string {
             <button id="layout-h" class="icon" role="radio" title="Pages side by side" aria-label="Pages side by side">${ICON.pagesH}</button>
             <button id="layout-v" class="icon" role="radio" title="Pages vertically" aria-label="Pages vertically">${ICON.pagesV}</button>
         </div>
-        <button id="spread" class="icon toggle" title="Two pages (two-sided page layout)" aria-label="Two pages" aria-pressed="false">${ICON.twoPages}</button>
+        <button id="spread" class="icon toggle" title="Two pages" aria-label="Two pages" aria-pressed="false">${ICON.twoPages}</button>
     </div>
 
     <div class="group" data-group="zoom">
@@ -957,7 +958,7 @@ html, body { margin: 0; padding: 0; background: #fff; }
     }
 
     private spreadActive(): boolean {
-        return !!this.score && this.settings.viewMode === 'page' && this.settings.spread && isTwoSided(this.score)
+        return !!this.score && this.settings.viewMode === 'page' && this.settings.spread
     }
 
     private buildPages(keepPosition = false): void {
@@ -983,12 +984,12 @@ html, body { margin: 0; padding: 0; background: #fff; }
                 this.pages.push(this.makePage(i))
             }
             if (this.spreadActive()) {
-                // two-sided layout: the first page is a right-hand page
+                // a first page with an odd number is a right-hand page
                 const placeholder = document.createElement('div')
                 placeholder.className = 'page placeholder'
                 placeholder.dataset.page = '0'
                 placeholder.setAttribute('aria-hidden', 'true')
-                const items = [placeholder, ...this.pages]
+                const items = firstPageIsRight(this.score!) ? [placeholder, ...this.pages] : this.pages
                 for (let i = 0; i < items.length; i += 2) {
                     const spread = document.createElement('div')
                     spread.className = 'spread'
@@ -1306,10 +1307,8 @@ html, body { margin: 0; padding: 0; background: #fff; }
         btn.layoutH.setAttribute('aria-checked', String(horizontal))
         btn.layoutV.setAttribute('aria-checked', String(!horizontal))
         this.viewModeSelect.value = this.settings.viewMode
-        const twoSided = !!this.score && isTwoSided(this.score)
-        btn.spread.disabled = !twoSided || !pageView
+        btn.spread.disabled = !has || !pageView
         btn.spread.setAttribute('aria-pressed', String(this.spreadActive()))
-        btn.spread.title = twoSided ? 'Two pages' : 'Two pages (only for scores with a two-sided page layout)'
         for (const b of [btn.prev, btn.next, btn.zoomIn, btn.zoomOut, btn.center, btn.print, btn.play, btn.rewind, btn.playalong]) {
             b.disabled = !has
         }
@@ -1459,10 +1458,7 @@ html, body { margin: 0; padding: 0; background: #fff; }
             this.goToPageIdx(cur + dir)
             return
         }
-        // spreads: [1], [2, 3], [4, 5], ... (0-based: [0], [1, 2], [3, 4], ...)
-        const spread = cur === 0 ? 0 : Math.floor((cur + 1) / 2)
-        const target = Math.max(0, spread + dir)
-        this.goToPageIdx(target === 0 ? 0 : 2 * target - 1)
+        this.goToPageIdx(stepSpread(cur, dir, firstPageIsRight(this.score!)))
     }
 
     private updatePageInfo(): void {
@@ -1473,11 +1469,13 @@ html, body { margin: 0; padding: 0; background: #fff; }
         }
         const n = this.pages.length
         const cur = this.currentPageIdx()
-        const partner = this.spreadActive() && cur > 0 ? (cur % 2 === 1 ? cur + 1 : cur - 1) : -1
-        const shown = partner >= 0 && partner < n ? `${Math.min(cur, partner) + 1}–${Math.max(cur, partner) + 1}` : `${cur + 1}`
+        const { left, right } = this.spreadActive() ? spreadPages(cur, firstPageIsRight(this.score)) : { left: cur, right: cur }
+        const first = Math.max(left, 0)
+        const last = Math.min(right, n - 1)
+        const shown = first === last ? `${first + 1}` : `${first + 1}–${last + 1}`
         this.pageInfo.textContent = `${shown} / ${n}`
-        this.btn.prev.disabled = cur <= 0
-        this.btn.next.disabled = Math.max(cur, partner) >= n - 1
+        this.btn.prev.disabled = first <= 0
+        this.btn.next.disabled = last >= n - 1
     }
 
     // ---------------------------------------------------------------------------------

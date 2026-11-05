@@ -992,6 +992,66 @@ describe.skipIf(!CHROME || !hasSubmodule)('editor', () => {
         await context.close()
     }, 120000)
 
+    it('keeps the two-pages view independent of Two sided and follows the first page number', async () => {
+        const { page, context } = await newPage()
+        await page.goto(`${base}?url=${encodeURIComponent(`${SCORE_HOST}amazing.mscz`)}`)
+        await scoreShown(page)
+        const pageSettings = async (change: () => Promise<void>, button = '.primary'): Promise<void> => {
+            await page.click('.menubar > button:has-text("Format")')
+            await page.click('.menu-popup .menu-item:has-text("Page settings…")')
+            await page.waitForSelector('dialog.page-settings[open]')
+            await change()
+            await page.click(`dialog.page-settings .dialog-buttons ${button}`)
+            await page.waitForSelector('dialog.page-settings', { state: 'detached' })
+        }
+        const twoSided = (on: boolean) => () => page.setChecked('dialog.page-settings label:has-text("Two sided") input', on)
+        const firstNumber = (n: number) => () => page.fill('dialog.page-settings input.page-offset', String(n))
+        const spreads = (): Promise<string[]> => page.evaluate(() => [...document.querySelectorAll('.spread')].map(s =>
+            [...s.children].map(c => c.classList.contains('placeholder') ? '-' : Number((c as HTMLElement).dataset.page) + 1).join(',')))
+        const spreadButton = '[data-action="view-two-pages"]'
+
+        // Two sided changes the margins, not the view
+        await pageSettings(twoSided(false))
+        expect(await spreads()).toEqual([])
+        await pageSettings(twoSided(true))
+        expect(await spreads()).toEqual([])
+        await pageSettings(twoSided(false))
+        expect(await page.isDisabled(spreadButton)).toBe(false)
+        await page.click(spreadButton)
+        expect((await spreads())[0]).toMatch(/^-,1/)
+        await pageSettings(twoSided(true))
+        expect((await spreads())[0]).toMatch(/^-,1/)
+
+        // first page number 2: page 1 is a left-hand page, at once and after undo and redo; Cancel changes nothing
+        await pageSettings(firstNumber(2), 'button:has-text("Cancel")')
+        expect((await spreads())[0]).toMatch(/^-,1/)
+        await pageSettings(firstNumber(2))
+        await page.waitForFunction(() => !document.querySelector('.placeholder'))
+        expect((await spreads())[0]).toMatch(/^1/)
+        await page.focus('#viewport')
+        await page.keyboard.press('ControlOrMeta+z')
+        await page.waitForSelector('.placeholder', { state: 'attached' })
+        await page.keyboard.press('ControlOrMeta+Shift+z')
+        await page.waitForFunction(() => !document.querySelector('.placeholder'))
+
+        // more pages: the pairs and the navigation start with page 1
+        const pages = await page.locator('.page').count()
+        await pageSettings(async () => {
+            const staffSpace = 'dialog.page-settings input[data-name="spatiumEntry"]'
+            await page.fill(staffSpace, String(Number(await page.inputValue(staffSpace)) * 3))
+            await page.press(staffSpace, 'Enter')
+        })
+        await page.waitForFunction(n => document.querySelectorAll('.page').length > n + 2, pages)
+        expect((await spreads()).slice(0, 2)).toEqual(['1,2', '3,4'])
+        await page.waitForFunction(() => /^1–2 \//.test(document.querySelector('.page-info')!.textContent!))
+        await page.focus('#viewport')
+        await page.keyboard.press('ControlOrMeta+PageDown')
+        await page.waitForFunction(() => /^3–4 \//.test(document.querySelector('.page-info')!.textContent!))
+        await page.keyboard.press('ControlOrMeta+PageUp')
+        await page.waitForFunction(() => /^1–2 \//.test(document.querySelector('.page-info')!.textContent!))
+        await context.close()
+    }, 120000)
+
     it('formats the score with Page settings and Measures per system (Format menu, undoable)', async () => {
         const { page, context } = await newPage()
         await page.goto(`${base}?url=${encodeURIComponent(`${SCORE_HOST}amazing.mscz`)}`)

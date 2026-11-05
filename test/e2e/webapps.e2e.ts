@@ -210,7 +210,7 @@ describe.skipIf(!CHROME || !hasSubmodule).each(['viewer', 'editor'])('%s', (app)
         await context.close()
     }, 120000)
 
-    it('shows pages side by side or vertically and two-page spreads for two-sided layouts', async () => {
+    it('shows pages side by side or vertically and two-page spreads', async () => {
         const { page, context } = await newPage()
         const rects = (): Promise<DOMRect[]> => page.evaluate(() =>
             [...$vqa('.page:not(.placeholder)')].map(p => p.getBoundingClientRect().toJSON() as DOMRect))
@@ -233,7 +233,7 @@ describe.skipIf(!CHROME || !hasSubmodule).each(['viewer', 'editor'])('%s', (app)
         await pageInfoIs(page, '2–3 / 4')
 
         await openScore(page, 'onesided.mscz')
-        expect(await page.isDisabled(sel.spread)).toBe(true)
+        expect(await page.isDisabled(sel.spread)).toBe(false) // whatever the score's Two sided setting
         await context.close()
     }, 120000)
 

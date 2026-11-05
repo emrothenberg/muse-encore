@@ -10,8 +10,9 @@ import { showScoreContextMenu } from './components/ScoreContextMenu'
 import { isInstrumentChangeSymbol, withSelectedInstrument } from './dialogs/instrumentchoice'
 import { useSyncExternalStore } from 'react'
 import { centerViewOnMeasureOrPage } from '../shared/centerview'
+import { spreadPages, stepSpread } from '../shared/spreads'
 import {
-    clearSelection, drawPage, drawPageSvg, setCanLayoutIcons, hasSelection, initEngravingFonts, isModified, isTwoSided, moveSelection,
+    clearSelection, drawPage, drawPageSvg, firstPageIsRight, setCanLayoutIcons, hasSelection, initEngravingFonts, isModified, moveSelection,
     centerTargetBounds, noteInputCursorBounds, noteInputState, onImageDecoded, onNotationChanged, pageCount, pageSize, scoreTitle, selectAll, selectionBounds, selectionInfo,
     SvgGlyphDefs, type MasterScore, type Score, currentNotation, onCurrentNotationChanged, setViewMode as setScoreViewMode, type ViewMode, drawContinuousPanel,
     // copy/paste, text editing, drag
@@ -60,7 +61,6 @@ export interface ScoreViewState {
     spread: boolean
     /** page view or one of the continuous views */
     viewMode: ViewMode
-    spreadAvailable: boolean
     fullscreen: boolean
     status: string
     statusError: boolean
@@ -78,7 +78,7 @@ export interface ScoreViewState {
 
 let viewState: ScoreViewState = {
     hasScore: false, title: '', tooltip: '', pageText: '–', canPrev: false, canNext: false, zoom: 100, fitMode: null,
-    orientation: 'horizontal', spread: false, viewMode: 'page', spreadAvailable: false, fullscreen: false, status: '', statusError: false,
+    orientation: 'horizontal', spread: false, viewMode: 'page', fullscreen: false, status: '', statusError: false,
     selection: '', modified: false, noteInput: false, selectionVersion: 0, scoreVersion: 0,
 }
 const viewListeners = new Set<() => void>()
@@ -148,7 +148,7 @@ function fitMode(): FitMode | null {
 }
 
 function spreadActive(): boolean {
-    return !!score && settings.viewMode === 'page' && settings.spread && isTwoSided(score)
+    return !!score && settings.viewMode === 'page' && settings.spread
 }
 
 export function setStatus(text: string, error = false): void {
@@ -545,12 +545,12 @@ function buildPages(keepPosition = false): void {
             pages.push(makePage(i))
         }
         if (spreadActive()) {
-            // two-sided layout: the first page is a right-hand page
+            // a first page with an odd number is a right-hand page
             const placeholder = document.createElement('div')
             placeholder.className = 'page placeholder'
             placeholder.dataset.page = '0'
             placeholder.setAttribute('aria-hidden', 'true')
-            const items = [placeholder, ...pages]
+            const items = firstPageIsRight(score) ? [placeholder, ...pages] : pages
             for (let i = 0; i < items.length; i += 2) {
                 const spread = document.createElement('div')
                 spread.className = 'spread'
@@ -601,7 +601,9 @@ export function scoreChanged(scroll = true): void {
     } else {
         removeShadowNote()
     }
-    if (pageCount(score) !== pages.length) {
+    // the page settings or their undo can change the first page number: page 1 moves to the other side of its spread
+    const placeholderNeeded = spreadActive() && firstPageIsRight(score)
+    if (pageCount(score) !== pages.length || placeholderNeeded !== !!pagesDiv.querySelector('.placeholder')) {
         buildPages(true)
     } else {
         applyZoom(zoom)
@@ -886,7 +888,7 @@ new ResizeObserver(() => {
 function updateControls(): void {
     const horizontal = settings.orientation === 'horizontal'
     pagesDiv.className = (horizontal ? 'horizontal' : 'vertical') + (settings.viewMode !== 'page' ? ' continuous' : '')
-    publish({ orientation: settings.orientation, spread: spreadActive(), spreadAvailable: !!score && isTwoSided(score) })
+    publish({ orientation: settings.orientation, spread: spreadActive() })
     updatePageInfo()
 }
 
@@ -1191,10 +1193,7 @@ export function stepPage(dir: 1 | -1): void {
         goToPage(cur + dir)
         return
     }
-    // spreads: [1], [2, 3], [4, 5], ... (0-based: [0], [1, 2], [3, 4], ...)
-    const spread = cur === 0 ? 0 : Math.floor((cur + 1) / 2)
-    const target = Math.max(0, spread + dir)
-    goToPage(target === 0 ? 0 : 2 * target - 1)
+    goToPage(stepSpread(cur, dir, firstPageIsRight(score!)))
 }
 
 function updatePageInfo(): void {
@@ -1204,9 +1203,11 @@ function updatePageInfo(): void {
     }
     const n = pages.length
     const cur = currentPage()
-    const partner = spreadActive() && cur > 0 ? (cur % 2 === 1 ? cur + 1 : cur - 1) : -1
-    const shown = partner >= 0 && partner < n ? `${Math.min(cur, partner) + 1}–${Math.max(cur, partner) + 1}` : `${cur + 1}`
-    publish({ pageText: `${shown} / ${n}`, canPrev: cur > 0, canNext: Math.max(cur, partner) < n - 1 })
+    const { left, right } = spreadActive() ? spreadPages(cur, firstPageIsRight(score)) : { left: cur, right: cur }
+    const first = Math.max(left, 0)
+    const last = Math.min(right, n - 1)
+    const shown = first === last ? `${first + 1}` : `${first + 1}–${last + 1}`
+    publish({ pageText: `${shown} / ${n}`, canPrev: first > 0, canNext: last < n - 1 })
 }
 
 viewport.addEventListener('scroll', () => {

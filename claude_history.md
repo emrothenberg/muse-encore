@@ -1836,3 +1836,10 @@
 - Not in the viewer: calibration, overtone filter menu, keep microphone, MIDI input pitch, MIDI mappings, selection of the parts followed, Up/Down keys.
 - Tests: webapps.e2e.ts (fake MIDI device). Checked once with the built package from another origin and Chrome's fake microphone playing a WAV of tones ("Notes heard: A4"). Not checked with a physical MIDI device, a real microphone or on jsDelivr itself.
 - The package's example now shows packages/viewer/example/bei_gezeiten.mscz (in the repository, by the project's owner) instead of a copy of Amazing_grace.mscz made by the Pages workflow.
+
+## Two-pages view independent of Two sided
+
+- The Two pages button of the editor and viewer works for every score: it is a view of ours, not in MuseScore, where pageTwosided only selects the even page margins. The setting no longer enables the view, and files do not choose it.
+- The sides follow Page::isOdd with the first page number (firstPageIsRight in src/index.ts, shared/spreads.ts for the pairs and the navigation): with first page number 2, the pairs are [1, 2], [3, 4].
+- The editor rebuilds the pages when the first page number changes the pairs (page settings, undo, redo).
+- isTwoSided stays in the library's API but the apps no longer use it.
