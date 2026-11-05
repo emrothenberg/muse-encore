@@ -1835,3 +1835,4 @@
 - The package now has basic-pitch/ (the model; option `noteDetectionUrl`). The detector's worker is created through a blob: import when its script is on another origin (a CDN), and a worker that cannot be loaded now rejects the start instead of hanging.
 - Not in the viewer: calibration, overtone filter menu, keep microphone, MIDI input pitch, MIDI mappings, selection of the parts followed, Up/Down keys.
 - Tests: webapps.e2e.ts (fake MIDI device). Checked once with the built package from another origin and Chrome's fake microphone playing a WAV of tones ("Notes heard: A4"). Not checked with a physical MIDI device, a real microphone or on jsDelivr itself.
+- The package's example now shows packages/viewer/example/bei_gezeiten.mscz (in the repository, by the project's owner) instead of a copy of Amazing_grace.mscz made by the Pages workflow.

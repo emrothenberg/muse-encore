@@ -51,7 +51,7 @@
       import applyMuseEncoreViewer from 'https://cdn.jsdelivr.net/npm/muse-encore-viewer@1.4.1/dist/muse-encore-viewer.js'
 
       const url =
-        new URLSearchParams(location.search).get("url") ?? "score.mscz";
+        new URLSearchParams(location.search).get("url") ?? "bei_gezeiten.mscz";
       window.viewers = [
         applyMuseEncoreViewer("#score1", url),
         applyMuseEncoreViewer(document.getElementById("score2"), url, {

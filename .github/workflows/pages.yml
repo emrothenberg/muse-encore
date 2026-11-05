@@ -41,8 +41,6 @@ jobs:
           npm run build:viewer-package
           mkdir -p _site/viewer-package
           cp -R packages/viewer/dist packages/viewer/fonts packages/viewer/basic-pitch packages/viewer/example _site/viewer-package/
-          # the example's score (not in the repository: packages/viewer/example/score.mscz is ignored)
-          cp MuseScore/demos/Amazing_grace.mscz _site/viewer-package/example/score.mscz
       - name: Landing page
         run: |
           sed "s/__VERSION__/$(node -p "require('./package.json').version")/g" .github/pages/index.html > _site/index.html
