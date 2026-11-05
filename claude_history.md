@@ -1843,3 +1843,4 @@
 - The sides follow Page::isOdd with the first page number (firstPageIsRight in src/index.ts, shared/spreads.ts for the pairs and the navigation): with first page number 2, the pairs are [1, 2], [3, 4].
 - The editor rebuilds the pages when the first page number changes the pairs (page settings, undo, redo).
 - isTwoSided stays in the library's API but the apps no longer use it.
+- The package's example page (packages/viewer/example/index.html) shows the full JavaScript of each example above its score, highlighted with highlight.js (CDN, theme idea). The code is in one place: `<script type="text/plain" class="example">` blocks, which the page displays and runs (inline module scripts would be emptied by Vite's dev server). `?url=` still works, through the global `urlToMuseScoreFile`; `window.viewers` is gone.

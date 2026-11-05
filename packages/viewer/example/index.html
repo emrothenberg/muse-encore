@@ -8,70 +8,128 @@
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/minimaxcss@latest/minimax-starter.css"
     />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/styles/idea.min.css"
+    />
+    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/highlight.min.js"></script>
     <style>
       body {
         max-width: 960px;
         margin: 32px auto;
         padding: 0 16px;
       }
+      pre {
+        padding: 0;
+        background: none;
+        border-radius: 8px;
+        margin-bottom: 2rem;
+        code.hljs {
+          background-color: var(--color-gray-light);
+        }
+      }
       .score {
         height: 560px;
         margin: 24px 0;
         border: 1px solid #ccc;
+        margin-bottom: 2rem;
       }
       .score.small {
         height: 360px;
       }
+      p {
+        margin-bottom: 1rem;
+      }
+      h3 {
+        margin-top: 2rem;
+      }
     </style>
   </head>
   <body>
-    <h1>muse-encore-viewer</h1>
-    <p>A score in a web page, with the default options:</p>
+    <h1>Examples</h1>
+
+    <p>Here <code>urlToMuseScoreFile</code> is the URL of your score.</p>
+
+    <h3>A score on a web page, with the default options</h3>
     <div id="score1" class="score"></div>
+    <script type="text/plain" class="example">
+      import applyMuseEncoreViewer from "https://cdn.jsdelivr.net/npm/muse-encore-viewer@1.4.2/dist/muse-encore-viewer.js";
 
-    <p>Without a toolbar:</p>
-    <div
-      id="score3"
-      class="score small"
-      style="aspect-ratio: 3/4; width: 100%; height: auto"
-    ></div>
+      applyMuseEncoreViewer("#score1", urlToMuseScoreFile);
+    </script>
 
-    <p>
-      The continuous view (horizontal) with the playback, Playalong and the
-      MIDI settings, no print and full screen buttons, the status bar:
-    </p>
+    <h3>Without a toolbar</h3>
     <div
       id="score2"
       class="score small"
+      style="aspect-ratio: 3/4; width: 100%; height: auto"
+    ></div>
+    <script type="text/plain" class="example">
+      import applyMuseEncoreViewer from "https://cdn.jsdelivr.net/npm/muse-encore-viewer@1.4.2/dist/muse-encore-viewer.js";
+
+      applyMuseEncoreViewer("#score2", urlToMuseScoreFile, {
+        disableToolbar: true,
+        colorScheme: "light",
+      });
+    </script>
+
+    <h3>Granular toolbar settings</h3>
+    <div
+      id="score3"
+      class="score small"
       style="aspect-ratio: 2; width: 100%; height: auto"
     ></div>
+    <script type="text/plain" class="example">
+      import applyMuseEncoreViewer from "https://cdn.jsdelivr.net/npm/muse-encore-viewer@1.4.2/dist/muse-encore-viewer.js";
+
+      applyMuseEncoreViewer(document.getElementById("score3"), urlToMuseScoreFile, {
+        continuousView: "horizontal",
+        toolbarGroups: {
+          playback: true,
+          playalong: true,
+          print: false,
+          fullScreen: false,
+          pageView: false,
+        },
+        showStatusBar: true,
+        keyboardShortcuts: true,
+        colorScheme: "light",
+      });
+    </script>
 
     <!-- npm run build:viewer-package, then serve packages/viewer (e.g. npx vite packages/viewer) and open /example/?url=<score> -->
-    <script type="module">
-      import applyMuseEncoreViewer from 'https://cdn.jsdelivr.net/npm/muse-encore-viewer@1.4.2/dist/muse-encore-viewer.js'
-
-      const url =
+    <script>
+      window.urlToMuseScoreFile =
         new URLSearchParams(location.search).get("url") ?? "bei_gezeiten.mscz";
-      window.viewers = [
-        applyMuseEncoreViewer("#score1", url),
-        applyMuseEncoreViewer(document.getElementById("score2"), url, {
-          continuousView: "horizontal",
-          toolbarGroups: {
-            playback: true,
-            playalong: true,
-            print: false,
-            fullScreen: false,
-            pageView: false,
-          },
-          showStatusBar: true,
-          keyboardShortcuts: true,
-          colorScheme: "light",
-        }),
-        applyMuseEncoreViewer("#score3", url, {
-          disableToolbar: true,
-          colorScheme: "light",
-        }),
-      ];
+
+      // shows the source of each example above its score and runs it (as
+      // text/plain it stays readable: Vite empties inline module scripts)
+      for (const script of document.querySelectorAll("script.example")) {
+        const lines = script.textContent.trim().split("\n");
+        const indent = Math.min(
+          ...lines
+            .slice(1)
+            .filter(Boolean)
+            .map((line) => line.search(/\S/)),
+        );
+        const source = [
+          lines[0],
+          ...lines.slice(1).map((line) => line.slice(indent)),
+        ].join("\n");
+
+        const code = document.createElement("code");
+        code.className = "language-javascript";
+        code.textContent = source;
+        hljs.highlightElement(code);
+        const pre = document.createElement("pre");
+        pre.append(code);
+        script.previousElementSibling.before(pre);
+
+        const module = document.createElement("script");
+        module.type = "module";
+        module.textContent = source;
+        document.body.append(module);
+      }
     </script>
   </body>
 </html>
